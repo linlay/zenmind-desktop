@@ -1,17 +1,40 @@
 import { t } from "../../support/i18n/main-i18n";
+import { safeConsoleError } from "../../support/logging/safe-console";
 import http from "node:http";
 import type { CallbackServerInfo, CallbackHooks, PendingLogin, DesktopSsoProxyState, DesktopSsoSessionMetadata } from "./sso-model";
 import type { App } from "electron";
 import type { DesktopSsoStatus, DesktopSsoClaims } from "../../../shared/contracts";
 
-let canonicalAccessToken = "";
+let canonicalBusinessToken = "";
 const credentialRevocationListeners = new Set<() => void>();
 export function subscribeDesktopSsoCredentialRevocation(listener: () => void) {
   credentialRevocationListeners.add(listener);
   return () => { credentialRevocationListeners.delete(listener); };
 }
 
+// Renewal keeps credentialGeneration; consumers parked on a rejected token wait for this instead.
+const credentialChangeListeners = new Set<() => void>();
+let credentialChangeQueued = false;
+export function subscribeDesktopSsoCredentialChange(listener: () => void) {
+  credentialChangeListeners.add(listener);
+  return () => { credentialChangeListeners.delete(listener); };
+}
+
+function queueCredentialChangeNotification() {
+  if (credentialChangeQueued) return;
+  credentialChangeQueued = true;
+  // Commits assign the token before their status; notify after the synchronous commit finishes.
+  queueMicrotask(() => {
+    credentialChangeQueued = false;
+    if (!canonicalBusinessToken) return;
+    for (const listener of credentialChangeListeners) {
+      try { listener(); } catch (error) { safeConsoleError("SSO credential change listener failed", error); }
+    }
+  });
+}
+
 export const desktopSsoRuntimeState = {
+  credentialGeneration: 0,
   currentStatus: createSignedOutStatus(t("sso.notSignedIn")),
   callbackServers: [] as http.Server[],
   callbackServerReady: null as Promise<void> | null,
@@ -19,11 +42,13 @@ export const desktopSsoRuntimeState = {
   callbackHooks: {} as CallbackHooks,
   pendingLogin: null as PendingLogin | null,
   desktopSsoProxyState: null as DesktopSsoProxyState | null,
-  get currentAccessToken() { return canonicalAccessToken; },
-  set currentAccessToken(value: string) {
-    const revoked = Boolean(canonicalAccessToken) && !value;
-    canonicalAccessToken = value;
+  get currentBusinessToken() { return canonicalBusinessToken; },
+  set currentBusinessToken(value: string) {
+    const previous = canonicalBusinessToken;
+    const revoked = Boolean(previous) && !value;
+    canonicalBusinessToken = value;
     if (revoked) for (const listener of credentialRevocationListeners) listener();
+    if (value && value !== previous) queueCredentialChangeNotification();
   },
   currentIdToken: "",
   currentSessionAuthMode: null as DesktopSsoSessionMetadata["authMode"] | null,
@@ -32,6 +57,10 @@ export const desktopSsoRuntimeState = {
   loadedSessionPath: "",
   unverifiedCookieSessionCandidate: false
 };
+
+export function getDesktopSsoCredentialGeneration() {
+  return desktopSsoRuntimeState.credentialGeneration;
+}
 
 export const usedAuthorizationCodes = new Set<string>();
 
@@ -85,7 +114,7 @@ export function createAuthenticatedStatus(
   completedSteps: DesktopSsoStatus["completedSteps"] = createCompletedSteps({
     session: true,
     userInfo: Boolean(claims),
-    accessToken: Boolean(desktopSsoRuntimeState.currentAccessToken)
+    accessToken: Boolean(desktopSsoRuntimeState.currentBusinessToken)
   }),
   options: { message?: string; error?: string; pending?: boolean } = {}
 ): DesktopSsoStatus {

@@ -1,7 +1,9 @@
+import type { InstalledDesktopSkinId, InstalledDesktopSkinSummary } from "../../../shared/desktop-appearance";
 import type { MarketCatalogItem, MarketItemType, MarketListOptions, MarketItem } from "../../../shared/contracts";
 import type { PluginLifecycle } from "../plugins";
 import type { ServicesFacade } from "../services";
 import type { WebsFacade } from "../webs";
+import type { PetPackageService } from "../pet";
 import type { App } from "electron";
 import { t } from "../../support/i18n/main-i18n";
 
@@ -39,6 +41,13 @@ export type InstalledRecord = {
 
 export type MarketplaceOptions = MarketListOptions & {
   expectedVersion?: string;
+  petPackages?: Pick<PetPackageService, "installMarketPackage" | "removePackage">;
+  assertPetOwner?: () => void;
+  skinPackages?: {
+    listInstalled: () => Promise<readonly InstalledDesktopSkinSummary[]>;
+    installArchive: (file:string,expected:{id:string;version:string},assertOwner:()=>void,onCommitted:(id:InstalledDesktopSkinId)=>void)=>Promise<InstalledDesktopSkinId>;
+  };
+  assertSkinOwner?: () => void;
   plugins?: PluginLifecycle;
   catalogSnapshot?: unknown;
   catalogUrl?: string;
@@ -66,6 +75,10 @@ export type MarketplaceOptions = MarketListOptions & {
   >;
 };
 
+/**
+ * "missing" reads the current canonical token; "unauthorized" re-reads it after Market returned 401.
+ * Neither reason may renew Desktop sign-in: a downstream rejection only fails the Market request.
+ */
 export type MarketAccessTokenReason = "missing" | "unauthorized";
 
 export type MarketAccessTokenIssuer = (

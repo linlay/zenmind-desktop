@@ -20,9 +20,6 @@ export function buildUpgradeRequest(
   options: { accessToken?: string | null; stripHeaders?: string[] } = {}
 ) {
   const upstreamUrl = buildUpstreamUrl(target, req.url);
-  if (options.accessToken) {
-    upstreamUrl.searchParams.set("token", options.accessToken);
-  }
   const requestTarget = `${upstreamUrl.pathname}${upstreamUrl.search}`;
   const lines = [`GET ${requestTarget} HTTP/${req.httpVersion}`];
   let hasUpgrade = false;
@@ -35,12 +32,18 @@ export function buildUpgradeRequest(
     if (!name || lowerName === "host" || lowerName === "connection" || stripHeaders.has(lowerName)) {
       continue;
     }
+    if (lowerName === "origin") {
+      // The host already verified this exact media route's incoming same origin.
+      lines.push(`Origin: ${target.origin}`);
+      continue;
+    }
     if (lowerName === "upgrade") {
       hasUpgrade = true;
     }
     lines.push(`${name}: ${value}`);
   }
 
+  if (options.accessToken) lines.push(`Authorization: Bearer ${options.accessToken}`);
   lines.push(`Host: ${target.host}`);
   lines.push("Connection: Upgrade");
   if (!hasUpgrade) {

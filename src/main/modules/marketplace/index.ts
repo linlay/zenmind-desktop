@@ -7,3 +7,7 @@ export { configureSkillMarketPlatformCaller } from "./skill-market";
 export { configureConnectorMarketPlatformCaller } from "./connector-market";
 export { WebappInstallError, WebappInstallPolicyError, WebappRuntimeRequiredError, installWebsiteAppArchiveFromPath } from "./website-app-market";
 export { registerMarketShareReceiver } from "./share-receiver";
+
+export { installPetMarketItem } from "./pet-market";
+
+export { installSkinMarketItem } from "./skin-market";

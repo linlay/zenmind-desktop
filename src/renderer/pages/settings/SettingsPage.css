@@ -621,7 +621,7 @@
 
 .settings-page .web-settings-page .web-action-button.is-secondary.ant-btn {
   border: 1px solid var(--control-center-border);
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-muted);
 }
 
@@ -870,6 +870,10 @@
 }
 
 .settings-page .webapp-user-config-help {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -941,22 +945,6 @@
 
 :root[data-theme="dark"] .settings-page .webapp-public-url > span {
   color: #65d49b;
-}
-
-.settings-page .webapp-import-empty {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 10px;
-  padding: 28px;
-  text-align: center;
-}
-
-.settings-page .webapp-import-empty span {
-  max-width: 440px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.55;
 }
 
 .settings-page .webapp-catalog-import {
@@ -3594,7 +3582,7 @@
   padding: 0;
   border: 1px solid var(--control-center-border);
   border-radius: 6px;
-  background: var(--control-center-card-muted);
+  background: var(--control-button-bg);
   color: var(--control-center-subtle);
   box-shadow: none;
 }
@@ -3760,6 +3748,8 @@
   border-top: 1px solid var(--line);
   background: transparent;
 }
+.settings-page .pet-gallery-heading { column-gap: 10px; }
+.settings-page .pet-gallery-heading > .settings-appearance-row-copy { flex: 1; }
 .settings-page .pet-gallery-heading .pet-import-controls { padding: 0; }
 .settings-page .pet-appearance-grid {
   display: grid;

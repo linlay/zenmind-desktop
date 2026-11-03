@@ -272,7 +272,7 @@ function createDesktopActionFixture(t, options = {}) {
   };
 }
 
-test("enterprise chat refreshes the Desktop JWT once after session exchange returns 401", async () => {
+function createParkedEnterpriseChat(overrides = {}) {
   const now = Date.now();
   const user = {
     id: "alice",
@@ -282,25 +282,24 @@ test("enterprise chat refreshes the Desktop JWT once after session exchange retu
     createdAt: now,
     updatedAt: now
   };
-  const identityAuthorizations = [];
-  let identityToken = "stale-desktop-jwt";
-  let refreshCalls = 0;
-  const runtime = new EnterpriseChatRuntime({
+  const fixture = {
+    identityToken: "stale-desktop-jwt",
+    identityAuthorizations: [],
+    sockets: [],
+    exchangeGate: null
+  };
+  fixture.runtime = new EnterpriseChatRuntime({
     app: { getVersion: () => "test" },
     initialEnabled: true,
     serverUrl: "http://127.0.0.1:11956",
-    getIdentityToken: () => identityToken,
-    refreshIdentityToken: async () => {
-      refreshCalls += 1;
-      identityToken = "fresh-desktop-jwt";
-      return identityToken;
-    },
+    getIdentityToken: () => fixture.identityToken,
     fetchImpl: async (url, init = {}) => {
       const pathname = new URL(url).pathname;
       if (pathname === "/api/v1/session/exchange") {
-        identityAuthorizations.push(init.headers.Authorization);
+        fixture.identityAuthorizations.push(init.headers.Authorization);
+        if (fixture.exchangeGate) await fixture.exchangeGate;
         if (init.headers.Authorization === "Bearer stale-desktop-jwt") {
-          return jsonResponse(401, { message: "expired" });
+          return jsonResponse(401, { message: "invalid signature" });
         }
         return jsonResponse(200, {
           token: "im-session-token",
@@ -319,18 +318,65 @@ test("enterprise chat refreshes the Desktop JWT once after session exchange retu
       }
       assert.fail(`unexpected enterprise chat request ${pathname}`);
     },
-    createWebSocket: (url) => new FakeWebSocket(url)
+    createWebSocket: (url) => {
+      const socket = new FakeWebSocket(url);
+      fixture.sockets.push(socket);
+      return socket;
+    },
+    ...overrides
+  });
+  return fixture;
+}
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: enterprise chat 401 stays local and retries only after Desktop commits another token`, async () => {
+    const f = createParkedEnterpriseChat({ platform });
+    const rejected = await f.runtime.refresh();
+    assert.equal(rejected.connectionState, "error");
+    assert.match(rejected.message, /invalid signature/u);
+    assert.deepEqual(f.identityAuthorizations, ["Bearer stale-desktop-jwt"]);
+
+    // Same token: no retry, so a misconfigured IM server cannot pace any loop.
+    f.runtime.handleCredentialChanged();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(f.identityAuthorizations, ["Bearer stale-desktop-jwt"]);
+
+    f.identityToken = "fresh-desktop-jwt";
+    f.runtime.handleCredentialChanged();
+    await waitFor(() => f.sockets.length === 1, "IM reconnect after Desktop renewal");
+    assert.deepEqual(f.identityAuthorizations, ["Bearer stale-desktop-jwt", "Bearer fresh-desktop-jwt"]);
+    assert.notEqual(f.runtime.getState().connectionState, "error");
+
+    // A healthy connection ignores later renewals; IM owns its derived session lifetime.
+    f.identityToken = "renewed-again-jwt";
+    f.runtime.handleCredentialChanged();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(f.identityAuthorizations.length, 2);
+    f.runtime.stop();
   });
 
-  const state = await runtime.refresh();
-  assert.notEqual(state.connectionState, "error");
-  assert.equal(refreshCalls, 1);
-  assert.deepEqual(identityAuthorizations, [
-    "Bearer stale-desktop-jwt",
-    "Bearer fresh-desktop-jwt"
-  ]);
-  runtime.stop();
-});
+  test(`${platform}: enterprise chat drops a session exchange that completes after sign-out`, async () => {
+    const f = createParkedEnterpriseChat({ platform });
+    f.identityToken = "fresh-desktop-jwt";
+    let releaseExchange;
+    f.exchangeGate = new Promise((resolve) => { releaseExchange = resolve; });
+    const refreshing = f.runtime.refresh();
+    await waitFor(() => f.identityAuthorizations.length === 1, "pending IM exchange");
+
+    f.identityToken = "";
+    f.runtime.handleSignedOut();
+    assert.equal(f.runtime.getState().connectionState, "signed_out");
+    assert.equal(f.runtime.getState().currentUser, null);
+
+    releaseExchange();
+    await refreshing;
+    const state = f.runtime.getState();
+    assert.equal(state.connectionState, "signed_out");
+    assert.equal(state.currentUser, null);
+    assert.equal(f.sockets.length, 0);
+    f.runtime.stop();
+  });
+}
 
 test("enterprise chat normalizes employee and service-bot directory identities", () => {
   assert.deepEqual(

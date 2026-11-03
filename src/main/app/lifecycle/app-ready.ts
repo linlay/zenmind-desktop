@@ -70,7 +70,7 @@ export interface HandleAppReadyDependencies {
   readonly beginAppQuitWithoutConfirmation: () => void;
   readonly startResourceDirectoryWatcher: () => void;
   readonly startupPipeline: Pick<ReturnType<typeof createStartupPipeline>, "run">;
-  readonly refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
+  readonly readDesktopSsoShareToken: () => string;
   readonly registerIpc: (sharesFacade: ShareFacade, conversationShareFacade: ReturnType<typeof createConversationShareFacade>, getUpdatesRuntime: () => ReturnType<typeof registerDesktopUpdates> | undefined) => void;
 }
 
@@ -117,7 +117,7 @@ export async function handleAppReady(dependencies: HandleAppReadyDependencies) {
   dependencies.assistantBridgeRuntime.start();
   const sharesFacade = createShareFacade({
     app,
-    refreshToken: dependencies.refreshDesktopSsoIdentityToken,
+    readToken: dependencies.readDesktopSsoShareToken,
   });
   const conversationShareFacade = createConversationShareFacade({
     shares: sharesFacade,

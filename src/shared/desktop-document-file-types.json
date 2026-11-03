@@ -1,0 +1,4 @@
+[
+  { "id": "Markdown", "name": "Markdown Document", "extensions": ["md", "markdown"] },
+  { "id": "HTML", "name": "HTML Document", "extensions": ["html", "htm"] }
+]

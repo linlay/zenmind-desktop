@@ -68,7 +68,11 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
     return options.refreshState();
   });
 
-  ipcMain.handle("desktopPet.saveSettings", async (_event: any, input: DesktopPetSettingsInput) => {
+  ipcMain.handle("desktopPet.saveSettings", async (event: any, input: DesktopPetSettingsInput) => {
+    const owner = options.getMainWindow();
+    if (!owner || owner.isDestroyed() || owner.webContents.isDestroyed()
+      || event.sender !== owner.webContents || event.senderFrame !== owner.webContents.mainFrame)
+      throw new Error("Pet settings require the main window.");
     const platform = options.platform;
     if (!isDesktopPetSupportedPlatform(platform)) {
       return options.refreshState();
@@ -77,6 +81,8 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
     const nextAppearanceId = typeof input.appearanceId === "string"
       ? sanitizeDesktopPetAppearanceId(input.appearanceId)
       : desktopPetSettings.appearanceId;
+    if (typeof input.appearanceId === "string" && !options.refreshState().appearanceOptions.some((appearance: { id: string }) => appearance.id === input.appearanceId))
+      throw new Error(t("settings.desktopPet.noticeAppearanceFailed"));
     const appearanceChanged = nextAppearanceId !== desktopPetSettings.appearanceId;
     if (appearanceChanged) {
       const nextSettings = saveDesktopPetSettings(options.app, {
@@ -139,10 +145,11 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   });
 
   ipcMain.handle("desktopPet.setMouseInteractive", async (event: any, interactive: boolean) => {
-    if (!isPetWindowSender(event)) {
+    if (typeof interactive !== "boolean" || !isPetSurfaceSender(event)) {
       return { ok: false };
     }
-    return options.setMouseInteractive(interactive);
+    // Derive the target from the real sender; a surface may only change its own window.
+    return options.setMouseInteractive(interactive, isPetWindowSender(event) ? "pet" : "panel");
   });
 
   ipcMain.handle("desktopPet.setWindowMode", async (event: any, mode: unknown) => {

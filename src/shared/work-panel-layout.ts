@@ -2,6 +2,7 @@ export const WORK_PANEL_MIN_WIDTH = 420;
 export const WORK_PANEL_MAIN_MIN_WIDTH = 420;
 export const WORK_PANEL_COLLAPSED_MAIN_GAP = 6;
 export const WORK_PANEL_COLLAPSE_DRAG_BUFFER = 96;
+const WORK_PANEL_FADE_STEPS = 4;
 export const WORK_PANEL_DEFAULT_MIN_WIDTH = 420;
 export const WORK_PANEL_DEFAULT_MAX_WIDTH = 680;
 export const WORK_PANEL_DEFAULT_VIEWPORT_RATIO = 0.42;
@@ -54,7 +55,7 @@ export function normalizeStoredWorkPanelWidth(value: unknown, fallbackWidth: num
   return clampWorkPanelWidth(finiteValue ?? fallbackWidth);
 }
 
-export function resolveWorkPanelWidthFromDrag(input: {
+export function resolveWorkPanelDragState(input: {
   initialWidth: number;
   startClientX: number;
   currentClientX: number;
@@ -62,10 +63,47 @@ export function resolveWorkPanelWidthFromDrag(input: {
 }) {
   const delta = input.startClientX - input.currentClientX;
   const availableWidth = readFiniteNumber(input.availableWidth);
-  // A rightward drag from the collapsed position restores the chat immediately.
-  const initialWidth = availableWidth !== null && availableWidth > 0 && delta < 0 &&
-    input.initialWidth >= resolveWorkPanelMaxWidth(availableWidth)
-    ? Math.max(WORK_PANEL_MIN_WIDTH, availableWidth - WORK_PANEL_MAIN_MIN_WIDTH)
-    : input.initialWidth;
-  return clampWorkPanelWidth(initialWidth + delta, input.availableWidth);
+  const expandedMaxWidth = availableWidth === null ? 0 : availableWidth - WORK_PANEL_MAIN_MIN_WIDTH;
+  const fadeStep = (distance: number) => Math.min(WORK_PANEL_FADE_STEPS,
+    Math.max(0, Math.floor(distance / (WORK_PANEL_COLLAPSE_DRAG_BUFFER / WORK_PANEL_FADE_STEPS))));
+  if (availableWidth !== null && expandedMaxWidth >= WORK_PANEL_MIN_WIDTH &&
+      input.initialWidth >= resolveWorkPanelMaxWidth(availableWidth)) {
+    const restoreDistance = Math.max(0, -delta);
+    const collapsedWidth = resolveWorkPanelMaxWidth(availableWidth);
+    const width = Math.min(collapsedWidth, Math.max(WORK_PANEL_MIN_WIDTH, Math.round(input.initialWidth + delta)));
+    const restoredWidth = clampWorkPanelWidth(
+      Math.min(width, expandedMaxWidth), availableWidth,
+    );
+    return {
+      // The panel edge follows the pointer one pixel for one pixel.
+      width,
+      settledWidth: restoreDistance >= WORK_PANEL_COLLAPSE_DRAG_BUFFER ? restoredWidth : collapsedWidth,
+      mainChatOpacity: (1 + fadeStep(restoreDistance)) / (WORK_PANEL_FADE_STEPS + 1),
+    };
+  }
+  const requestedWidth = input.initialWidth + delta;
+  const collapseDistance = requestedWidth - expandedMaxWidth;
+  const canPreviewCollapse = availableWidth !== null && expandedMaxWidth >= WORK_PANEL_MIN_WIDTH;
+  const collapseStep = canPreviewCollapse
+    ? fadeStep(collapseDistance)
+    : 0;
+  const settledWidth = clampWorkPanelWidth(requestedWidth, input.availableWidth);
+  const width = Math.min(resolveWorkPanelMaxWidth(input.availableWidth), Math.max(WORK_PANEL_MIN_WIDTH, Math.round(requestedWidth)));
+  return {
+    width,
+    settledWidth,
+    // Keep the chat at 20% at the buffer endpoint; release commits the collapse.
+    mainChatOpacity: (WORK_PANEL_FADE_STEPS + 1 - collapseStep) / (WORK_PANEL_FADE_STEPS + 1),
+  };
+}
+
+export function resolveWorkPanelWidthFromDrag(input: Parameters<typeof resolveWorkPanelDragState>[0]) {
+  const state = resolveWorkPanelDragState(input);
+  const availableWidth = readFiniteNumber(input.availableWidth);
+  // Keyboard resizing commits a stable layout without a pointer preview.
+  if (availableWidth !== null && input.currentClientX > input.startClientX &&
+      input.initialWidth >= resolveWorkPanelMaxWidth(availableWidth)) {
+    return clampWorkPanelWidth(Math.min(state.width, availableWidth - WORK_PANEL_MAIN_MIN_WIDTH), availableWidth);
+  }
+  return state.settledWidth;
 }

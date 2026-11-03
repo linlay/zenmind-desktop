@@ -4,7 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, session, type Session } from "elec
 import { WEBAPP_AUTH_CHANNEL, type WebappAuthSessionResult } from "../../../shared/webapp-auth";
 import { DESKTOP_BROWSER_WEBVIEW_PARTITION } from "../../../shared/browser-surfaces";
 import { getDesktopStateRoot } from "../../infrastructure/filesystem/user-paths";
-import { getDesktopSsoAccessToken, getDesktopSsoStatus, subscribeDesktopSsoCredentialRevocation } from "../identity";
+import { getDesktopSsoBusinessToken, getDesktopSsoStatus, subscribeDesktopSsoCredentialRevocation } from "../identity";
 import type { BrowserSurfaceRegistry } from "../web-surfaces";
 import type { WebsFacade } from "./facade";
 import { t } from "../../support/i18n/main-i18n";
@@ -15,7 +15,8 @@ type CookieRecord = { partition: string; url: string; name: string };
 export function registerWebappAuth(options: {
   registry: BrowserSurfaceRegistry;
   webs: WebsFacade;
-  refreshToken(force?: boolean): Promise<string>;
+  /** Published canonical token; a website 401 never renews or revokes Desktop sign-in. */
+  readToken(): string;
 }) {
   let epoch = 0;
   let cookies: CookieRecord[] = [];
@@ -99,7 +100,7 @@ export function registerWebappAuth(options: {
       guest.on("did-start-navigation", changed);
       guest.once("destroyed", changed);
       const initialStatus = getDesktopSsoStatus(app);
-      if (!initialStatus.authenticated || !initialStatus.user?.sub || !getDesktopSsoAccessToken()) {
+      if (!initialStatus.authenticated || !initialStatus.user?.sub || !getDesktopSsoBusinessToken()) {
         throw new WebappAuthError("sign_in_required", "Sign in to Desktop first.");
       }
       // Registration alone is not permission to disclose an SSO bearer. The native
@@ -112,7 +113,7 @@ export function registerWebappAuth(options: {
       const consent = owner ? await dialog.showMessageBox(owner, messageOptions) : await dialog.showMessageBox(messageOptions);
       validate();
       if (consent.response !== 1) throw new WebappAuthError("cancelled", "Sign-in was cancelled.");
-      let token = await options.refreshToken();
+      let token = options.readToken();
       validate();
       const status = getDesktopSsoStatus(app);
       if (!token || !status.authenticated || !status.user?.sub) throw new WebappAuthError("sign_in_required", "Sign in to Desktop first.");
@@ -120,7 +121,7 @@ export function registerWebappAuth(options: {
       const validateIdentity = () => {
         validate();
         const current = getDesktopSsoStatus(app);
-        if (!current.authenticated || identity !== JSON.stringify([current.user?.issuer, current.user?.sub]) || !getDesktopSsoAccessToken()) {
+        if (!current.authenticated || identity !== JSON.stringify([current.user?.issuer, current.user?.sub]) || !getDesktopSsoBusinessToken()) {
           throw new WebappAuthError("context_changed", "The Desktop account changed.");
         }
       };
@@ -133,11 +134,12 @@ export function registerWebappAuth(options: {
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]), bypassCustomProtocolHandlers: true
       });
       let response = await exchange();
-      if (response.status === 401) {
+      const current = options.readToken();
+      if (response.status === 401 && current && current !== token) {
+        // Desktop renewed on its own schedule while this request was in flight; use that token once.
         await response.body?.cancel();
-        token = await options.refreshToken(true);
+        token = current;
         validateIdentity();
-        if (!token) throw new WebappAuthError("sign_in_required", "Sign in to Desktop first.");
         response = await exchange();
       }
       validateIdentity();

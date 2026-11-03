@@ -18,6 +18,7 @@ export function isMarketItemType(value: unknown): value is MarketItemType {
     value === "agent" ||
     value === "sandbox-image" ||
     value === "pet" ||
+    value === "skin" ||
     value === "cli" ||
     value === "mcp" ||
     value === "connector" ||
@@ -36,6 +37,7 @@ export function normalizeMarketItemType(value: unknown): MarketItemType | null {
     value === "agent" ||
     value === "sandbox-image" ||
     value === "pet" ||
+    value === "skin" ||
     value === "cli" ||
     value === "mcp" ||
     value === "connector" ||
@@ -235,7 +237,7 @@ export function isDesktopInstallableAsset(
   item: Pick<MarketCatalogItem, "type" | "sandboxKind">,
   asset: MarketAsset
 ) {
-  if (item.type === "plugin" || item.type === "skill" || item.type === "connector") {
+  if (item.type === "plugin" || item.type === "skill" || item.type === "connector" || item.type === "skin") {
     return asset.archiveType === "zip";
   }
   if (item.type === "agent") {
@@ -268,6 +270,7 @@ export function shouldRequireInstallableAsset(item: MarketCatalogItem) {
     (item.type === "skill" && item.skill?.kind !== "package") ||
     item.type === "agent" ||
     item.type === "pet" ||
+    item.type === "skin" ||
     item.type === "website-app" ||
     item.type === "software-package" ||
     (item.type === "sandbox-image" && item.sandboxKind === "environment-template");

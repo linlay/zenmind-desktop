@@ -129,7 +129,7 @@ export function getWebappBridgeCapabilities(
         return {
           id,
           status,
-          declared: id === "desktop.share.receive" ? !!item.shareReceiver : id === "skill.read" ? !!item.copilot?.agentKey : true,
+          declared: id === "desktop.share.receive" ? !!item.shareReceiver : true,
           permission: id === "auth.session" ? "prompt" as const : id === "desktop.microphone"
             ? microphonePermission
             : id === "desktop.notification" && !notificationAvailable

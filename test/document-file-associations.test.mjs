@@ -153,7 +153,9 @@ Section "Uninstall"
   !insertmacro DesktopUnregisterDocumentFileHandlers
 SectionEnd
 `);
-    const result = spawnSync(toolchain.binary, ["/V2", "/INPUTCHARSET", "UTF8", smokePath], {
+    // Native macOS/Linux makensis uses '-' flags; the Windows binary uses '/'.
+    const optionPrefix = process.platform === "win32" ? "/" : "-";
+    const result = spawnSync(toolchain.binary, [`${optionPrefix}V2`, `${optionPrefix}INPUTCHARSET`, "UTF8", smokePath], {
       env: { ...process.env, NSISDIR: toolchain.root },
       encoding: "utf8",
       timeout: 30000

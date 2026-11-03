@@ -1,4 +1,5 @@
 export { loadBuiltinServices } from "./builtin-loader";
+export { preparePlatformRuntimeRecovery } from "./runtime-recovery";
 export { resolveContainerEngine, runContainerEngineCommand } from "./container-engine";
 export type { ContainerEngineName, ContainerEngineResolution } from "./container-engine";
 export { registerServicesIpcHandlers } from "./ipc";

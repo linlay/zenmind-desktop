@@ -7,6 +7,7 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 const { requestVisibleMarketJson, loadMarketplaceCatalog } = require('../dist-electron/main/modules/marketplace/common.js');
 const { readMarketSkillContent } = require('../dist-electron/main/modules/marketplace/skill-detail.js');
+const { getMainLocale, setMainLocaleForCurrentProcess } = require('../dist-electron/main/support/i18n/main-i18n.js');
 const base = 'https://market.example/api/v1';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'market-visibility-'));
 const app = { getPath: name => path.join(root,name), getVersion: () => '0.4.6' };
@@ -62,4 +63,37 @@ test('account changes discard an old response and custom catalog URLs never rece
  await assert.rejects(requestVisibleMarketJson(app,base+'/desktop/catalog',s.options),/identity changed/);
  await assert.rejects(requestVisibleMarketJson(app,'https://elsewhere.example/catalog',s.options),/configured API/);
  assert.ok(s.calls.every(c=>c.url.startsWith(base)));
+});
+
+test('catalog transport failures give localized network guidance and recover on the next load', async t => {
+ const previousLocale=getMainLocale();t.after(()=>setMainLocaleForCurrentProcess(previousLocale));
+ const failures=[
+  new TypeError('fetch failed'), new TypeError('Failed to fetch'),
+  new TypeError('Load failed'), new DOMException('A network error occurred.', 'NetworkError'),
+  ...['EACCES','EPERM','ENOTFOUND','EAI_AGAIN','ECONNREFUSED','ECONNRESET','ENETUNREACH','EHOSTUNREACH'].map(code =>
+   new Error('network unavailable',{cause:Object.assign(new Error('request blocked'),{code})}))
+ ];
+ for (const [locale,message] of [
+  ['zh-CN','暂时无法连接市场，请检查网络连接后重试。'],
+  ['en-US','Unable to connect to the market. Check your network connection and try again.']
+ ]) {
+  setMainLocaleForCurrentProcess(locale);
+  const s=setup();const fetch=s.options.fetchImpl;
+  for (const failure of failures) {
+   s.options.fetchImpl=async()=>{throw failure};
+   const result=await loadMarketplaceCatalog(app,s.options);
+   assert.equal(result.offline,true);
+   assert.deepEqual(result.catalog.items,[]);
+   assert.equal(result.message,message);
+  }
+  // An HTTP error that mentions fetch is not evidence that the user is offline.
+  s.options.fetchImpl=async()=>Response.json({message:'fetch failed on the server'},{status:403});
+  const denied=await loadMarketplaceCatalog(app,s.options);
+  assert.notEqual(denied.message,message);
+  assert.match(denied.message,/fetch failed on the server/);
+  s.options.fetchImpl=fetch;
+  const recovered=await loadMarketplaceCatalog(app,s.options);
+  assert.equal(recovered.offline,false);assert.ok(recovered.catalog.items.length>0);
+  assert.equal(s.tokenCalls(),0,'network failures must not initiate sign-in');
+ }
 });

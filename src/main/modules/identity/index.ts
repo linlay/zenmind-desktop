@@ -5,8 +5,8 @@ export { getDesktopDeviceId, getDesktopDeviceIdentityInfo } from "./device-ident
 export { getDesktopDeviceInfo } from "./device-info";
 export { ensureIdentityCenterJwk } from "./identity-center-auth";
 export { registerSsoIpcHandlers } from "./ipc";
-export { cancelDesktopSsoLogin, completeDesktopSsoCookieLogin, desktopSsoAccessTokenNeedsRefresh, failDesktopSsoFlow, failDesktopSsoStep, finalizeDesktopSsoLoginAttempt, getDesktopSsoAccessToken, getDesktopSsoStatus, isDesktopSsoCredentialRuntimeReady, isDesktopSsoLoginCompletionUrl, logoutDesktopSso, readDesktopSsoAccessToken, readDesktopSsoAccessTokenUser, resolveDesktopSsoConfigPath, startDesktopSsoLogin } from "./oidc-sso";
+export { cancelDesktopSsoLogin, completeDesktopSsoCookieLogin, desktopSsoIdTokenNeedsRefresh, failDesktopSsoFlow, failDesktopSsoStep, finalizeDesktopSsoLoginAttempt, getDesktopSsoBusinessToken, getDesktopSsoStatus, isDesktopSsoCredentialRuntimeReady, isDesktopSsoLoginCompletionUrl, logoutDesktopSso, readDesktopSsoIdToken, readDesktopSsoIdTokenUser, resolveDesktopSsoConfigPath, startDesktopSsoLogin } from "./oidc-sso";
 export { createDesktopSsoController } from "./sso-controller";
 export type { DesktopSsoRestoreResult } from "./sso-controller";
 
-export { subscribeDesktopSsoCredentialRevocation } from "./sso-state";
+export { getDesktopSsoCredentialGeneration, subscribeDesktopSsoCredentialChange, subscribeDesktopSsoCredentialRevocation } from "./sso-state";

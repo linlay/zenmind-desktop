@@ -51,6 +51,40 @@ test("timestamp errors retry with a bound; other signing and verification errors
   }
 });
 
+test("skipping macOS timestamps explicitly disables codesign's default timestamp request", (t) => {
+  const keys = ["SKIP_NOTARIZE", "DESKTOP_SKIP_MAC_TIMESTAMP"];
+  const saved = keys.map((key) => process.env[key]);
+  t.after(() => {
+    for (const [index, key] of keys.entries()) {
+      if (saved[index] === undefined) delete process.env[key];
+      else process.env[key] = saved[index];
+    }
+  });
+  for (const enabledKey of keys) {
+    for (const key of keys) process.env[key] = String(key === enabledKey);
+    const calls = [];
+    const waits = [];
+    signMachOFile("binary", "identity", {
+      run: (_cmd, args) => { calls.push(args); return ""; },
+      wait: (ms) => waits.push(ms)
+    });
+    assert.equal(calls.length, 2);
+    assert.ok(calls[0].includes("--timestamp=none"));
+    assert.ok(!calls[0].includes("--timestamp"));
+    assert.ok(calls[0].includes("runtime"));
+    assert.deepEqual(calls[1], ["--verify", "--strict", "--verbose=2", "binary"]);
+    assert.deepEqual(waits, []);
+
+    let attempts = 0;
+    assert.throws(() => signMachOFile("binary", "identity", {
+      run: () => { attempts++; throw new Error("A timestamp was expected but was not found."); },
+      wait: (ms) => waits.push(ms)
+    }), /timestamp/);
+    assert.equal(attempts, 1);
+    assert.deepEqual(waits, []);
+  }
+});
+
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-builtin-signing-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

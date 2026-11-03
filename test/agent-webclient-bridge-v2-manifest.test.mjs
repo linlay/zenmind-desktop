@@ -21,10 +21,11 @@ function normalize(value) {
 }
 
 const voiceRoute = {
-  match: "prefix",
-  path: "/api/voice",
-  targetEnv: "VOICE_BASE_URL",
-  optional: true,
+  match: "exact",
+  path: "/api/voice/ws",
+  targetEnv: "BASE_URL",
+  http: false,
+  auth: "agent-platform-access-token",
   websocket: true,
 };
 const apiRoute = {
@@ -36,7 +37,7 @@ const apiRoute = {
   auth: "agent-platform-access-token",
 };
 
-test("Frame Port bundle accepts only an authenticated HTTP Agent Platform route", () => {
+test("Frame Port bundle accepts authenticated HTTP plus the exact voice media route", () => {
   const normalized = normalize(manifest([voiceRoute, apiRoute]));
   assert.deepEqual(normalized.desktop.hosting.proxyRoutes, [voiceRoute, apiRoute]);
 });
@@ -79,6 +80,12 @@ test("Frame Port rejects missing API routes and forbidden proxy routes", () => {
     [{ ...apiRoute, targetEnv: "OTHER_URL" }],
     [{ ...apiRoute, http: false }],
     [apiRoute, { match: "prefix", path: "/auth", targetEnv: "AUTH_URL" }],
+    [apiRoute, { ...voiceRoute, match: "prefix" }],
+    [apiRoute, { ...voiceRoute, auth: undefined }],
+    [apiRoute, { ...voiceRoute, targetEnv: "OLD_VOICE_URL" }],
+    // The released pre-v1 bundle routed every voice path to a separate service.
+    [apiRoute, { match: "prefix", path: "/api/voice", targetEnv: "VOICE_BASE_URL", optional: true, websocket: true }],
+    [apiRoute, { ...voiceRoute, http: true }],
     [apiRoute, { match: "exact", path: "/realtime", targetEnv: "BASE_URL", websocket: true }],
   ]) {
     assert.throws(() => normalize(manifest(routes)), /Frame Port manifest/u);

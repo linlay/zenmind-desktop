@@ -29,9 +29,10 @@ import {
 import { buildDesktopSsoProxyUrl } from "./sso-proxy-urls";
 
 export function cancelDesktopSsoLogin(app: App, message = t("sso.cancelled")): DesktopSsoStatus {
+  desktopSsoRuntimeState.credentialGeneration++;
   closeCallbackServer(undefined, true);
   desktopSsoRuntimeState.pendingLogin = null;
-  desktopSsoRuntimeState.currentAccessToken = "";
+  desktopSsoRuntimeState.currentBusinessToken = "";
   if (!desktopSsoRuntimeState.unverifiedCookieSessionCandidate) {
     loadSession(app);
   }
@@ -47,6 +48,7 @@ export function cancelDesktopSsoLogin(app: App, message = t("sso.cancelled")): D
 }
 
 export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}): Promise<DesktopSsoStartResult> {
+  desktopSsoRuntimeState.credentialGeneration++;
   closeCallbackServer(undefined, true);
   desktopSsoRuntimeState.pendingLogin = null;
   const configResult = loadDesktopSsoConfig(app);

@@ -63,6 +63,7 @@ export function normalizeStoredTarget(
     value === "darwin-arm64" ||
     value === "darwin-x64" ||
     value === "darwin-universal" ||
+    value === "linux-x64" ||
     value === "win32-arm64" ||
     value === "win32-x64"
     ? value

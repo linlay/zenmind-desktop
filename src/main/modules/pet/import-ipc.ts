@@ -1,5 +1,4 @@
-import { resolveRemovablePetPath } from "./remove-package";
-import { dialog, shell, type App, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
+import { dialog, type App, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import type { DesktopPetImportResult, DesktopPetRemoveResult, DesktopPetState } from "../../../shared/contracts";
 import { PetPackageError } from "./pet-package";
 import type { PetPackageService } from "./package-service";
@@ -33,16 +32,12 @@ export function registerPetImportIpcHandlers(ipcMain: IpcMain, options: {
       try {
         owner(event);
         if (options.platform !== "darwin" && options.platform !== "win32") throw new Error("Unsupported platform");
-        const target = resolveRemovablePetPath(options.app, appearanceId);
-        // Electron uses Trash on macOS and Recycle Bin on Windows; no permanent rm fallback.
-        await shell.trashItem(target);
-        options.onRemoved(appearanceId);
-        return { ok: true, state: options.refreshState() };
+        return { ok: true, state: await packages.removePackage(appearanceId, () => { owner(event); }, options.onRemoved) };
       } catch {
         return { ok: false, error: "removeFailed" };
       }
     };
-    return packages.run(run);
+    return run();
   });
   for (const kind of ["Package", "DroppedPackage"] as const) {
     ipcMain.handle(`desktopPet.import${kind}`, (event, input): Promise<DesktopPetImportResult> => {

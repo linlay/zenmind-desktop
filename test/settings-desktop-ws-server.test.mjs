@@ -313,53 +313,56 @@ test("enterprise IM settings use independent persistence and notify runtime chan
   assert.equal(changedSettings.at(-1).enabled, false);
 });
 
-test("desktop state snapshot reads the fixed file whitelist including the raw access token", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-state-snapshot-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+for (const platform of ["darwin", "win32"]) {
+  test(`desktop debug snapshot reads original contents from the fixed file whitelist on ${platform}`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-state-snapshot-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const app = createApp(path.join(root, "home"));
-  const stateRoot = getDesktopStateRoot(app, "darwin");
-  fs.mkdirSync(stateRoot, { recursive: true });
-  const fileContents = new Map([
-    ["bootstrap.json", JSON.stringify({ schemaVersion: 1, consumed: true })],
-    ["env-bootstrap.json", JSON.stringify({ copiedFiles: 2 })],
-    ["pet-state.json", JSON.stringify({ unreadCount: 3 })],
-    ["sso-session.json", JSON.stringify({ authenticated: true })],
-    ["sso-access-token.txt", "plain-debug-access-token"]
-  ]);
-  for (const [fileName, content] of fileContents) {
-    fs.writeFileSync(path.join(stateRoot, fileName), content, "utf8");
-  }
-  fs.writeFileSync(path.join(stateRoot, "ignored.json"), "{\"ignored\":true}", "utf8");
+    const app = createApp(path.join(root, "home"));
+    const stateRoot = getDesktopStateRoot(app, platform);
+    fs.mkdirSync(stateRoot, { recursive: true });
+    const fileContents = new Map([
+      ["bootstrap.json", JSON.stringify({ schemaVersion: 1, consumed: true })],
+      ["env-bootstrap.json", JSON.stringify({ copiedFiles: 2 })],
+      ["pet-state.json", JSON.stringify({ unreadCount: 3 })],
+      ["sso-session.json", JSON.stringify({ authenticated: true })],
+      ["sso-id-token.txt", "debug.id.token\n"]
+    ]);
+    for (const [fileName, content] of fileContents) {
+      fs.writeFileSync(path.join(stateRoot, fileName), content, "utf8");
+    }
+    fs.writeFileSync(path.join(stateRoot, "ignored.json"), "{\"ignored\":true}", "utf8");
 
-  const ipcMain = registerSettingsHandlers(app);
-  const snapshot = await ipcMain.invoke("settings.getDesktopStateSnapshot");
+    const ipcMain = registerSettingsHandlers(app, { platform });
+    const snapshot = await ipcMain.invoke("settings.getDesktopStateSnapshot");
 
-  assert.equal(snapshot.rootPath, stateRoot);
-  assert.equal(typeof snapshot.readAt, "number");
-  assert.deepEqual(snapshot.files.map((file) => file.name), [
-    "bootstrap.json",
-    "env-bootstrap.json",
-    "pet-state.json",
-    "sso-session.json",
-    "sso-access-token.txt"
-  ]);
-  assert.equal(snapshot.files.some((file) => file.name === "ignored.json"), false);
+    assert.equal(snapshot.rootPath, stateRoot);
+    assert.equal(typeof snapshot.readAt, "number");
+    assert.deepEqual(snapshot.files.map((file) => file.name), [
+      "bootstrap.json",
+      "env-bootstrap.json",
+      "pet-state.json",
+      "sso-session.json",
+      "sso-id-token.txt"
+    ]);
+    assert.equal(snapshot.files.some((file) => file.name === "ignored.json"), false);
 
-  const bootstrap = snapshot.files[0];
-  assert.equal(bootstrap.exists, true);
-  assert.equal(bootstrap.format, "json");
-  assert.equal(bootstrap.content, JSON.stringify({ schemaVersion: 1, consumed: true }, null, 2));
-  assert.equal(bootstrap.size, Buffer.byteLength(fileContents.get("bootstrap.json")));
-  assert.equal(typeof bootstrap.modifiedAt, "number");
-  assert.equal(bootstrap.error, undefined);
+    const bootstrap = snapshot.files[0];
+    assert.equal(bootstrap.exists, true);
+    assert.equal(bootstrap.format, "json");
+    assert.equal(bootstrap.content, JSON.stringify({ schemaVersion: 1, consumed: true }, null, 2));
+    assert.equal(bootstrap.size, Buffer.byteLength(fileContents.get("bootstrap.json")));
+    assert.equal(typeof bootstrap.modifiedAt, "number");
+    assert.equal(bootstrap.error, undefined);
 
-  const token = snapshot.files.at(-1);
-  assert.equal(token.exists, true);
-  assert.equal(token.format, "text");
-  assert.equal(token.content, "plain-debug-access-token");
-  assert.equal(token.error, undefined);
-});
+    const token = snapshot.files.at(-1);
+    assert.equal(token.exists, true);
+    assert.equal(token.format, "text");
+    assert.equal(token.content, fileContents.get("sso-id-token.txt"));
+    assert.equal(token.size, Buffer.byteLength(token.content));
+    assert.equal(token.error, undefined);
+  });
+}
 
 test("desktop state snapshot isolates missing, invalid, and unreadable fixed files", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-state-errors-"));
@@ -380,9 +383,9 @@ test("desktop state snapshot isolates missing, invalid, and unreadable fixed fil
   assert.match(byName.get("bootstrap.json").error, /^Invalid JSON:/u);
   assert.equal(byName.get("pet-state.json").exists, true);
   assert.match(byName.get("pet-state.json").error, /regular file/u);
-  assert.equal(byName.get("sso-access-token.txt").exists, false);
-  assert.equal(byName.get("sso-access-token.txt").content, "");
-  assert.equal(byName.get("sso-access-token.txt").modifiedAt, null);
+  assert.equal(byName.get("sso-id-token.txt").exists, false);
+  assert.equal(byName.get("sso-id-token.txt").content, "");
+  assert.equal(byName.get("sso-id-token.txt").modifiedAt, null);
 });
 
 test("desktop state snapshot derives the runtime path explicitly for macOS and Windows", async (t) => {

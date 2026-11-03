@@ -24,6 +24,7 @@ import {
 } from "../../../shared/surface-identity";
 import type { MainChatCommitSnapshot } from "../../service-webview/ServiceWebviewSurface";
 import type { AgentWebclientWorkspaceArrowKeyDirection } from "../../../shared/service-webview-bridge";
+import type { AgentWebclientHeaderLayout } from "../../../shared/contracts/agent-webclient-bridge";
 
 type ThemeMode = "light" | "dark";
 
@@ -76,6 +77,7 @@ function resolveWebsiteSsoPartition(item: EmbeddedSidebarItem) {
 }
 
 export function ServiceWebviewSurfaceHost({
+  headerLayout,
   mainChatObserverActive = true,
   chatDefaultAgentKey,
   activeServiceId,
@@ -89,6 +91,7 @@ export function ServiceWebviewSurfaceHost({
   onMainChatWorkspaceArrowKey,
 }: {
   mainChatObserverActive?: boolean;
+  headerLayout?: AgentWebclientHeaderLayout;
   chatDefaultAgentKey?: string;
   activeServiceId: string | null;
   activeAgentWebclientRoute: AgentWebclientRouteItem | null;
@@ -165,6 +168,7 @@ export function ServiceWebviewSurfaceHost({
       {shouldRenderAgentChatSurface ? (
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
+          headerLayout={headerLayout}
           surfaceOwnershipActive={mainChatObserverActive && activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "chat"}
           active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "chat"}
           desktopRoute={agentChatRoute?.routePath}
@@ -430,7 +434,7 @@ export function CanonicalWebappSurfaceHost({
   itemMap,
   mountedEntryKeys,
   presentations,
-  workPanelState,
+  activeWorkPanelItemId,
   activeWorkPanelChatId,
   workPanelVisible,
   onCloseWebItem,
@@ -439,7 +443,7 @@ export function CanonicalWebappSurfaceHost({
   itemMap: Map<WebEntryKey, EmbeddedSidebarItem>;
   mountedEntryKeys: WebEntryKey[];
   presentations: Record<string, WebappPresentationOwner>;
-  workPanelState: { workspaces: Array<{ ownerChatId: string; activeItemId: string | null }> };
+  activeWorkPanelItemId: string | null;
   activeWorkPanelChatId: string | null;
   workPanelVisible: boolean;
   onCloseWebItem?: (entryKey: WebEntryKey) => void;
@@ -463,7 +467,7 @@ export function CanonicalWebappSurfaceHost({
             ? activeEntryKey === entryKey
             : owner.scope === "workpanel"
               ? workPanelVisible && activeWorkPanelChatId === owner.ownerChatId &&
-                workPanelState.workspaces.find((workspace) => workspace.ownerChatId === owner.ownerChatId)?.activeItemId === owner.itemId
+                activeWorkPanelItemId === owner.itemId
               : false;
           return (
             <CanonicalWebappSurface

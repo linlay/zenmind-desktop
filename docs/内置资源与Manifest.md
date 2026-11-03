@@ -84,3 +84,8 @@ Windows/Linux 继续消费各自原始清单；签名后刷新仅用于 Darwin �
 - `scripts/build-builtin-services.sh` 与 `scripts/build-builtin-services.ps1`
 - `src/shared/contracts/manifest.ts`
 - 内置资源、bundle 路径和平台打包测试
+
+Agent Platform 的 Desktop manifest 必须显式声明 SSO ID-token 文件启动契约版本；Desktop 在构造 start 命令前拒绝缺少或不匹配的发布物，不能由旧启动脚本忽略未知参数后静默降级。Platform 发布模板与 Desktop 校验同批更新；本次不自动重建或同步旧的本地 bundle。
+
+
+实时语音媒体属于 Platform，WebClient bundle 的语音 HTTP 和精确媒体 WS 共用 API 的目标，不声明独立语音上游。Manifest 的 Frame Port 校验只对经过认证、HTTP 关闭的精确媒体路径允许 WS；主聊天 WS 和 Run 控制仍不提供绕过 Frame Port 的路由。部署入口默认关闭，真实语音验收后才启用。

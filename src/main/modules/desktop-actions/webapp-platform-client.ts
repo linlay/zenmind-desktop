@@ -53,16 +53,34 @@ export async function captureWebappContext(options: DesktopActionBridgeOptions, 
   if (!item || runtime?.status !== "running" || signal?.aborted) throw new ConnectorError("app_grant_required");
   const fingerprint = JSON.stringify([runtime.startedAt, runtime.webUrl, item.version, item.desktopBridge, item.copilot]);
   const key = JSON.stringify([identity.baseUrl, identity.subject, appId, fingerprint]);
-  async function check() {
-    const current = await platform(options);
+  function assertIdentity(current: { subject: string; baseUrl: string }) {
+    if (current.subject !== identity.subject || current.baseUrl !== identity.baseUrl) throw new ConnectorError("app_grant_required");
+  }
+  function checkInstance() {
     const active = options.webs.webappRuntime.getStatus(options.app, appId);
     const installed = options.webs.webappManager.list(options.app).find(value => value.id === appId);
-    if (signal?.aborted || current.subject !== identity.subject || current.baseUrl !== identity.baseUrl ||
+    if (signal?.aborted ||
         !installed || active?.status !== "running" ||
         JSON.stringify([active.startedAt, active.webUrl, installed.version, installed.desktopBridge, installed.copilot]) !== fingerprint) {
       throw new ConnectorError("app_grant_required");
     }
   }
-  return { ...identity, appId, item, key, signal, check };
+  async function check() {
+    checkInstance();
+    assertIdentity(await platform(options));
+    checkInstance();
+  }
+  return { ...identity, appId, item, key, signal, check, checkInstance, assertIdentity };
+}
+
+// Periodic execution probes share one in-flight identity lookup per Desktop.
+// This avoids eight simultaneous synchronous process probes on macOS.
+const executionIdentityProbes = new WeakMap<DesktopActionBridgeOptions, { sampledAt: number; pending: ReturnType<typeof platform> }>();
+export function probeWebappExecutionIdentity(options: DesktopActionBridgeOptions) {
+  const previous = executionIdentityProbes.get(options);
+  if (previous && Date.now() - previous.sampledAt < 1000) return previous.pending;
+  const pending = platform(options);
+  executionIdentityProbes.set(options, { sampledAt: Date.now(), pending });
+  return pending;
 }
 export type WebappContext = Awaited<ReturnType<typeof captureWebappContext>>;

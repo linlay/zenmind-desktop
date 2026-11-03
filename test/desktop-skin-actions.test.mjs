@@ -116,7 +116,8 @@ test("skin mutations use existing confirmation and denial leaves state and notif
   const skinId = (await h.call("import", { filePath: h.source })).result.skinId;
   const before = h.changes();
   for (const [name, args] of [["import", { filePath: h.source }], ["set", { skinId }], ["remove", { skinId }]]) {
-    const response = await handleActionCall(h.options, { action: `desktop.skin.${name}`, args }, { kind: "agentPlatform" });
+    // External confirmations belong to Desktop entry; Agent Platform already owns its approval boundary.
+    const response = await handleActionCall(h.options, { action: `desktop.skin.${name}`, args }, { kind: "desktop" });
     assert.equal(response.error.code, "user_cancelled");
   }
   assert.equal(confirmations, 3);

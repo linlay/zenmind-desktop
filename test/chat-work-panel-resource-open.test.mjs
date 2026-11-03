@@ -392,3 +392,33 @@ test("shell failures are localized and do not expose their absolute path", async
   assert.equal("path" in revealResult, false);
   assert.equal(JSON.stringify(revealResult).includes(absolutePath), false);
 });
+
+test("current @chat MP4 routes resolve their literal published path for Finder and Explorer", async () => {
+  const ownerChatId = "chat-video";
+  for (const platform of ["darwin", "win32"]) {
+    const runtimeRoot = platform === "darwin" ? "/Users/test/.cutej" : "C:\\Users\\test\\.cutej";
+    for (const filename of ["期货公司标准解读_连续配音版_修订版.mp4", "100%完整 #1.mp4", "%E4%B8%AD.mp4"]) {
+      const relativePath = `artifacts/run-video/${filename}`;
+      const route = `/resource-viewer/cutej?${new URLSearchParams({ chatId: ownerChatId, file: `@chat/${relativePath}` })}`;
+      assert.equal(resolveChatWorkPanelLocalResourcePath({ ownerChatId, profile: "artifact", route }), relativePath);
+      const revealed = [];
+      const path = await import("node:path");
+      const pathApi = platform === "darwin" ? path.posix : path.win32;
+      const filePath = pathApi.join(runtimeRoot, "chats", ownerChatId, ...relativePath.split("/"));
+      const result = await revealChatWorkPanelResourceInFileManager({ ownerChatId, profile: "artifact", relativePath }, {
+        app: {}, platform, resolveRuntimeRoot: () => runtimeRoot,
+        existsSync: () => true, realpathSync: target => target, statSync: () => ({ isFile: () => true }),
+        showItemInFolder: target => revealed.push(target),
+      });
+      assert.equal(result.ok, true);
+      assert.deepEqual(revealed, [filePath]);
+      assert.equal(resolveChatWorkPanelLocalResourcePath({ ownerChatId: "other-chat", profile: "artifact", route }), "");
+      assert.equal(resolveChatWorkPanelLocalResourcePath({ ownerChatId, profile: "reference", route }), "");
+    }
+  }
+  for (const relativePath of ["artifacts/../secret.mp4", "artifacts/%252e%252e/secret.mp4", "artifacts/%2fetc/secret.mp4"]) {
+    const route = `/resource-viewer/cutej?${new URLSearchParams({ chatId: ownerChatId, file: `@chat/${relativePath}` })}`;
+    const resolved = resolveChatWorkPanelLocalResourcePath({ ownerChatId, profile: "artifact", route });
+    assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({ ownerChatId, profile: "artifact", relativePath: resolved }), null);
+  }
+});

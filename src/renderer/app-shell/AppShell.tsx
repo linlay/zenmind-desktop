@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useNaviga
 import { BorderOutlined, CloseOutlined, MinusOutlined, ShareAltOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar, type AppSidebarChatMenuHandle } from "./navigation/AppSidebar";
 import { HistoryGestureOverlay } from "./navigation/HistoryGestureOverlay";
+import { DesktopChatHeaderNavigation, DESKTOP_CHAT_HEADER_INITIAL_INSET, WINDOWS_CHAT_HEADER_INITIAL_INSET } from "./navigation/DesktopChatHeaderNavigation";
+import { WebappCopilotButton } from "./navigation/WebappCopilotButton";
 import { forwardMainChatAwaitingDigit } from "../services/mainChatAwaitingShortcut";
 import { getActiveServiceSurfaceId, getServiceSurfaceWebview } from "../services/serviceSurfaceWebviewRefs";
 import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
@@ -12,6 +14,7 @@ import { useLocalDocumentWorkspace } from "../work-panel/useLocalDocumentWorkspa
 import { localDocumentWorkPanelOwnerForRoute, useLocalDocumentsWorkPanel } from "../work-panel/useLocalDocumentsWorkPanel";
 import { useAppearance } from "../appearance/AppearanceProvider";
 import { DesktopBackground } from "../appearance/DesktopBackground";
+import { isWebclientHostBackgroundSurface } from "../appearance/webclientProjection";
 import { isThemePreference, type ThemePreference } from "../appearance/model";
 import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
@@ -74,7 +77,7 @@ import {
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
 import { dispatchDesktopCloseShortcut } from "../services/desktopCloseShortcutRegistry";
-import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationPresentation, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationPresentation, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishInfo, WebappPublishStatusResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -110,11 +113,14 @@ import {
 } from "../../shared/sidebar-layout";
 import {
   WORK_PANEL_COLLAPSED_MAIN_GAP,
+  WORK_PANEL_COLLAPSE_DRAG_BUFFER,
+  WORK_PANEL_MAIN_MIN_WIDTH,
   WORK_PANEL_MIN_WIDTH,
   WORK_PANEL_RESIZE_STEP,
   clampWorkPanelWidth,
   normalizeStoredWorkPanelWidth,
   resolveDefaultWorkPanelWidth,
+  resolveWorkPanelDragState,
   resolveWorkPanelMaxWidth,
   resolveWorkPanelWidthFromDrag,
 } from "../../shared/work-panel-layout";
@@ -181,6 +187,8 @@ import { buildWebEntryPath, resolveWebRouteEntryKey } from "../../shared/web-ent
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
 import { WorkPanelHost } from "../work-panel/WorkPanelHost";
+import { WorkPanelResizeGuide } from "../work-panel/WorkPanelResizeGuide";
+import { resolveWorkPanelActiveItemId, type WorkPanelNewTabSelections } from "../work-panel/new-tab-selection";
 import {
   ProjectFloatingWebviews,
   type ProjectFloatingWebviewEntry,
@@ -234,37 +242,6 @@ type ExternalExperimentalItem = {
 };
 
 const EMPTY_WEB_SURFACE_ROUTE = "/webs";
-const WEBAPP_PUBLISH_CHANGE_REASONS = new Set([
-  "published",
-  "unpublished",
-  "route-synced",
-  "publish-failed"
-]);
-
-function sameWebappPublishState(
-  left: WebappPublishState | null | undefined,
-  right: WebappPublishState | null | undefined
-) {
-  if (!left || !right) {
-    return left === right;
-  }
-  return left.id === right.id &&
-    left.updatedAt === right.updatedAt &&
-    left.active === right.active &&
-    left.status === right.status &&
-    left.url === right.url;
-}
-
-function sameWebappPublishStateMap(
-  left: Record<string, WebappPublishState | null>,
-  right: Record<string, WebappPublishState | null>
-) {
-  const leftIds = Object.keys(left);
-  const rightIds = Object.keys(right);
-  return leftIds.length === rightIds.length &&
-    rightIds.every((id) => sameWebappPublishState(left[id], right[id]));
-}
-
 function resolveAssistantNavDisplayItems(result: AssistantNavAgentItemsResult) {
   const activityItems = Array.isArray(result.activityItems) ? result.activityItems : [];
   return activityItems.length > 0 ? activityItems : result.items;
@@ -609,8 +586,9 @@ function resolveWindowDragTarget(target: Element | null) {
 
 export function AppShell() {
   const { locale, setLocale, t } = useI18n();
-  const shellOverlay = useShellOverlay();
   const location = useLocation();
+  const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
+  const shellOverlay = useShellOverlay(JSON.stringify([location.pathname, activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId]));
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
@@ -670,6 +648,7 @@ export function AppShell() {
   const workPanelEnteredNativeFullscreenRef = useRef(false);
   const workPanelFullscreenTransitionPendingRef = useRef(false);
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
+  const [runtimeResetStage, setRuntimeResetStage] = useState<import("../../shared/contracts").DesktopRuntimeResetStage | null>(null);
   const [desktopAppVersion, setDesktopAppVersion] = useState("");
   const [desktopDisplay, setDesktopDisplay] = useState<DesktopDisplayOverlayRequest | null>(null);
   const desktopDisplayTokenRef = useRef(0);
@@ -771,6 +750,9 @@ export function AppShell() {
     useState<ProjectFloatingWebviewEntry[]>([]);
   const projectFloatingFocusRequestIdRef = useRef(0);
   const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
+  const [selectedWorkPanelNewTabs, setSelectedWorkPanelNewTabs] = useState<WorkPanelNewTabSelections>({});
+  // Presentation only: the canonical Main Chat guest stays in its original host.
+  const [workPanelMainChatOwnerKey, setWorkPanelMainChatOwnerKey] = useState<string | null>(null);
   const localDocumentState = useLocalDocumentWorkspace();
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const workPanelDialogRestoresRef = useRef(new Set<string>());
@@ -822,6 +804,11 @@ export function AppShell() {
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
   const [webappPublishStateById, setWebappPublishStateById] = useState<Record<string, WebappPublishState | null>>({});
+  const [webappPublishInfo, setWebappPublishInfo] = useState<WebappPublishInfo | null>(null);
+  const webItemsRefreshIdRef = useRef(0);
+  const webappRuntimeStates = useMemo(() => Object.fromEntries(
+    Object.entries(webappRuntimeById).map(([id, runtime]) => [id, runtime.state])
+  ), [webappRuntimeById]);
   const [faviconCache, setFaviconCache] = useState<WebsiteFaviconCache>({});
   const webItemsRef = useRef<WebEntry[]>([]);
   const activeWebEntryKeyRef = useRef<WebEntryKey | null>(null);
@@ -832,6 +819,9 @@ export function AppShell() {
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [isWorkPanelResizing, setIsWorkPanelResizing] = useState(false);
+  const [workPanelDragMainChatOpacity, setWorkPanelDragMainChatOpacity] = useState(1);
+  const [workPanelDragPreviewWidth, setWorkPanelDragPreviewWidth] = useState<number | null>(null);
+  const [workPanelDragGuide, setWorkPanelDragGuide] = useState<{ direction: "expand" | "collapse"; left: number } | null>(null);
   const [isCopilotDockResizing, setIsCopilotDockResizing] = useState(false);
   const [appShellWidth, setAppShellWidth] = useState(() =>
     typeof window === "undefined" ? 1440 : window.innerWidth
@@ -882,8 +872,15 @@ export function AppShell() {
   const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute(activeAgentWebclientRoute)
     ? activeAgentWebclientRoute
     : null;
+  // Reserve the wallpaper canvas before a lazy guest mounts or negotiates its
+  // document. Guest authorization and appearance delivery remain independent.
+  const usesWebclientBackgroundSurface = Boolean(activeEmbeddedAgentWebclientRoute &&
+    isWebclientHostBackgroundSurface(AGENT_WEBCLIENT_SERVICE_ID,
+      activeEmbeddedAgentWebclientRoute.kind === "chat"
+        ? { surfaceId: MAIN_CHAT_SURFACE_ID, surfaceRole: "main-chat" }
+        : createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID),
+      activeEmbeddedAgentWebclientRoute.embedPath));
   const currentRoute = `${location.pathname}${location.search}`;
-  const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
   const desiredChatRouteChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId && !activeChatRouteInfo.chatId.startsWith("file-draft:")
     ? activeChatRouteInfo.chatId
     : null;
@@ -903,12 +900,15 @@ export function AppShell() {
   );
   const showMainChatWorkPanelToggle = activeEmbeddedAgentWebclientRoute?.kind === "chat";
   const workPanelMaxWidth = resolveWorkPanelMaxWidth(appContentWidth || undefined);
-  const renderedWorkPanelWidth = clampWorkPanelWidth(
-    preferredWorkPanelWidth,
-    appContentWidth || undefined,
-  );
+  // Pointer previews intentionally pass through the range the settled layout snaps over.
+  const renderedWorkPanelWidth = workPanelDragPreviewWidth === null
+    ? clampWorkPanelWidth(preferredWorkPanelWidth, appContentWidth || undefined)
+    : Math.min(workPanelMaxWidth, Math.max(WORK_PANEL_MIN_WIDTH, workPanelDragPreviewWidth));
   const isMainChatCollapsedByWorkPanel = activeChatWorkPanelVisible && appContentWidth > 0 &&
     renderedWorkPanelWidth >= workPanelMaxWidth;
+  const showWorkPanelMainChatTab = isMainChatCollapsedByWorkPanel && !workPanelFullscreenOwnerChatId;
+  const isWorkPanelMainChatActive = showWorkPanelMainChatTab &&
+    workPanelMainChatOwnerKey === activeChatWorkPanelOwnerKey;
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const activeServiceId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
@@ -1256,9 +1256,15 @@ export function AppShell() {
   );
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
   const usesWebappSurface = activeWebEntry?.kind === "webapp";
-  const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && workPanelState.workspaces.some(
-    (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId && workspace.items.some(
-      (item) => item.itemId === workspace.activeItemId && item.descriptor.kind === "webapp-ref",
+  const activeWorkPanelWorkspace = workPanelState.workspaces.find(
+    (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId,
+  );
+  const activeWorkPanelItemId = isWorkPanelMainChatActive
+    ? null
+    : resolveWorkPanelActiveItemId(activeWorkPanelWorkspace, selectedWorkPanelNewTabs);
+  const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && Boolean(
+    activeWorkPanelWorkspace?.items.some(
+      (item) => item.itemId === activeWorkPanelItemId && item.descriptor.kind === "webapp-ref",
     ),
   );
   const resolvedCopilotAgentKey = activeWebEntry
@@ -1272,6 +1278,8 @@ export function AppShell() {
     isSingleAgentWebclientRoute(location.pathname);
   const copilotDockAllowed = !isKanbanRoute && !isAgentWebclientMainRoute;
   const assistantLauncherVisible = copilotDockAllowed && currentCopilotPreference?.enabled !== false;
+  const showWebappCopilotButton = usesWebappSurface && assistantLauncherVisible
+    && sidebarMode === "primary" && !workPanelFullscreenOwnerChatId;
   const currentCopilotContextKey = activeWebEntryKey || (
     location.pathname === BUILTIN_BROWSER_ROUTE
       ? BUILTIN_BROWSER_SURFACE_ID
@@ -1296,6 +1304,21 @@ export function AppShell() {
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const effectiveSidebarCollapsed = sidebarCollapsed && !isSecondarySidebarMode;
+  useLayoutEffect(() => {
+    if (isMac) window.electronAPI.desktopShell.setMainWindowSidebarCollapsed(effectiveSidebarCollapsed);
+  }, [effectiveSidebarCollapsed, isMac]);
+  // macOS shares one window-anchored group across both sidebar states. Windows
+  // keeps its system-bar group, switching to the fixed group only in fullscreen.
+  const showSidebarHeaderNavigation = sidebarMode === "primary" && !workPanelFullscreenOwnerChatId && (
+    isMac || (isWindows && windowFullScreen) || (!isWindows && effectiveSidebarCollapsed && showMainChatWorkPanelToggle)
+  );
+  const showCollapsedChatHeaderNavigation = showSidebarHeaderNavigation && effectiveSidebarCollapsed && showMainChatWorkPanelToggle;
+  const [chatHeaderLeftInset, setChatHeaderLeftInset] = useState(
+    isMac ? DESKTOP_CHAT_HEADER_INITIAL_INSET : WINDOWS_CHAT_HEADER_INITIAL_INSET,
+  );
+  const mainChatHeaderLayout = useMemo(() => ({ sidebarCollapsed: effectiveSidebarCollapsed,
+    headerLeftInset: showCollapsedChatHeaderNavigation ? chatHeaderLeftInset : 0 }),
+  [effectiveSidebarCollapsed, showCollapsedChatHeaderNavigation, chatHeaderLeftInset]);
   const effectiveSidebarWidth = isSecondarySidebarMode
     ? SETTINGS_SIDEBAR_WIDTH
     : renderedSidebarWidth;
@@ -1347,83 +1370,26 @@ export function AppShell() {
     [webGroupOrder, webItems]
   );
   async function refreshWebItems() {
+    const revision = ++webItemsRefreshIdRef.current;
     const result = await window.electronAPI.webs.list();
-    if (result.ok) {
+    if (result.ok && revision === webItemsRefreshIdRef.current) {
       updateWebItems(result.items);
-      setWebappPublishStateById((current) =>
-        sameWebappPublishStateMap(current, result.webappPublishStates)
-          ? current
-          : result.webappPublishStates
-      );
-      await refreshWebappRuntimeStates(result.items);
+      setWebappPublishStateById(result.webappPublishStates);
+      setWebappPublishInfo(result.webappPublishInfo);
+      for (const [id, state] of Object.entries(result.webappRuntimeStates)) {
+        if (!webappStartInFlightRef.current.has(id) && !webappStopInFlightRef.current.has(id)) {
+          handleWebappRuntimeStateChange(id, state);
+        }
+      }
     }
     return result;
   }
 
-  async function refreshWebappPublishState(webappId: string) {
-    const normalizedId = webappId.trim();
-    if (!normalizedId) {
-      return;
-    }
-    const result = await window.electronAPI.webs.webapps.getPublishStatus(normalizedId);
-    setWebappPublishStateById((current) => {
-      if (sameWebappPublishState(current[normalizedId], result.state)) {
-        return current;
-      }
-      return { ...current, [normalizedId]: result.state };
-    });
-  }
-
-  function handleSettingsWebappPublishStateChange(id: string, state: WebappPublishState | null) {
-    const webappId = id.trim();
-    if (!webappId) {
-      return;
-    }
-    setWebappPublishStateById((current) =>
-      sameWebappPublishState(current[webappId], state)
-        ? current
-        : { ...current, [webappId]: state }
-    );
-  }
-
-  async function refreshWebappRuntimeStates(items: WebEntry[]) {
-    const webapps = items.filter((item) => item.kind === "webapp");
-    if (webapps.length === 0) {
-      return;
-    }
-
-    const statuses = await Promise.all(webapps.map(async (item) => ({
-      id: item.id,
-      result: await window.electronAPI.webs.webapps.getStatus(item.id)
-    })));
-
-    setWebappRuntimeById((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const { id, result } of statuses) {
-        if (!result.ok || !result.state) {
-          continue;
-        }
-        const status = result.state.status === "stopped" ? "idle" : result.state.status;
-        const previous = current[id];
-        if (
-          previous?.status === status &&
-          previous.webUrl === result.state.webUrl &&
-          previous.message === result.message &&
-          previous.state?.updatedAt === result.state.updatedAt
-        ) {
-          continue;
-        }
-        changed = true;
-        next[id] = {
-          status,
-          webUrl: result.state.webUrl,
-          message: result.message || result.state.message,
-          state: result.state
-        };
-      }
-      return changed ? next : current;
-    });
+  function handleWebappPublishStatusChange(id: string, result: Pick<WebappPublishStatusResult, "info" | "state">) {
+    if (!webItemsRef.current.some((item) => item.kind === "webapp" && item.id === id)) return;
+    webItemsRefreshIdRef.current++;
+    setWebappPublishStateById((current) => ({ ...current, [id]: result.state }));
+    setWebappPublishInfo(result.info);
   }
 
   async function createWebsiteItem(input: WebsiteInput): Promise<WebsiteResult> {
@@ -1472,11 +1438,7 @@ export function AppShell() {
 
     const result = await window.electronAPI.webs.webapps.uninstall(item.id);
     if (result.ok) {
-      setWebappRuntimeById((current) => {
-        const next = { ...current };
-        delete next[item.id];
-        return next;
-      });
+      handleWebappRuntimeStateChange(item.id, null);
     } else {
       if (wasActive) moveWebappPresentationToMain(item);
       if (wasActive) {
@@ -1488,6 +1450,12 @@ export function AppShell() {
   }
 
   function updateWebItems(items: WebEntry[]) {
+    const ids = new Set(items.filter((item) => item.kind === "webapp").map((item) => item.id));
+    for (const item of webItemsRef.current) {
+      if (item.kind === "webapp" && !ids.has(item.id)) {
+        handleWebappRuntimeStateChange(item.id, null);
+      }
+    }
     webItemsRef.current = items;
     setWebItems(items);
     setWebItemsLoaded(true);
@@ -1577,15 +1545,12 @@ export function AppShell() {
     }));
     try {
       const result = await window.electronAPI.webs.webapps.start(item.id);
-      setWebappRuntimeById((current) => ({
-        ...current,
-        [item.id]: {
-          status: result.ok && result.state?.webUrl ? "running" : "error",
-          webUrl: result.state?.webUrl ?? "",
-          message: result.message,
-          state: result.state,
-        },
-      }));
+      handleWebappRuntimeStateChange(item.id, result.state, result.message,
+        result.ok && result.state?.webUrl ? "running" : "error");
+    } catch (error) {
+      handleWebappRuntimeStateChange(item.id, null,
+        error instanceof Error ? error.message : String(error), "error");
+      throw error;
     } finally {
       webappStartInFlightRef.current.delete(item.id);
     }
@@ -1600,15 +1565,7 @@ export function AppShell() {
       webappStopInFlightRef.current.add(item.id);
       try {
         const result = await window.electronAPI.webs.webapps.stop(item.id);
-        setWebappRuntimeById((current) => ({
-          ...current,
-          [item.id]: {
-            status: result.ok ? "idle" : "error",
-            webUrl: result.state?.webUrl ?? "",
-            message: result.message,
-            state: result.state
-          }
-        }));
+        handleWebappRuntimeStateChange(item.id, result.state, result.message, result.ok ? "idle" : "error");
         if (!result.ok) {
           throw new Error(result.message);
         }
@@ -1659,15 +1616,8 @@ export function AppShell() {
       }));
 
       const result = await window.electronAPI.webs.webapps.openWindow(item.id);
-      setWebappRuntimeById((current) => ({
-        ...current,
-        [item.id]: {
-          status: result.ok && result.state?.webUrl ? "running" : "error",
-          webUrl: result.state?.webUrl ?? "",
-          message: result.message,
-          state: result.state
-        }
-      }));
+      handleWebappRuntimeStateChange(item.id, result.state, result.message,
+        result.ok && result.state?.webUrl ? "running" : "error");
     } catch (error) {
       setWebappRuntimeById((current) => ({
         ...current,
@@ -1811,29 +1761,29 @@ export function AppShell() {
       });
   }
 
-  function handleSettingsWebappRuntimeStateChange(id: string, state: WebappRuntimeState | null, message = "") {
-    const webappId = id.trim();
-    if (!webappId) {
-      return;
-    }
+  function handleWebappRuntimeStateChange(
+    id: string, state: WebappRuntimeState | null, message = "", status?: WebappRuntimeViewState["status"]
+  ) {
+    if (!id) return;
+    webItemsRefreshIdRef.current++;
     if (!state || state.status === "stopped") {
       const item = webItemsRef.current.find(
-        (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === webappId,
+        (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === id,
       );
       if (item) disposeWebappPresentation(item);
     }
     setWebappRuntimeById((current) => {
-      if (!state) {
+      if (!state && !status) {
         const next = { ...current };
-        delete next[webappId];
+        delete next[id];
         return next;
       }
       return {
         ...current,
-        [webappId]: {
-          status: state.status === "stopped" ? "idle" : state.status,
-          webUrl: state.webUrl,
-          message: message || state.message,
+        [id]: {
+          status: status ?? (state?.status === "stopped" ? "idle" : state?.status ?? "error"),
+          webUrl: state?.webUrl ?? "",
+          message: message || state?.message || "",
           state
         }
       };
@@ -2428,6 +2378,11 @@ export function AppShell() {
   }, []);
 
   // Failed updates leave the app open for diagnostics/retry rather than trapping it under the quit overlay.
+  useEffect(() => window.electronAPI.settings.onRuntimeResetProgress(stage => {
+    setRuntimeResetStage(stage === "failed" ? null : stage);
+    if (stage === "failed") setShutdownProgress(null);
+  }), []);
+
   useEffect(() => window.electronAPI.updates?.onChanged((state) => {
     if (state.phase === "error") setShutdownProgress(null);
   }), []);
@@ -2597,6 +2552,7 @@ export function AppShell() {
       .catch(() => undefined);
     const dispose = ssoApi.onStatusChanged((status) => {
       setDesktopSsoStatus(status);
+      void refreshWebItems().catch(() => undefined);
       if (status.pending) {
         setDesktopSsoLoginSettled(false);
       } else if (isCompleteDesktopSsoLogin(status)) {
@@ -2662,14 +2618,6 @@ export function AppShell() {
         setMountedWebEntryKeys((current) =>
           current.filter((currentEntryKey) => currentEntryKey !== entryKey)
         );
-        return;
-      }
-      if (
-        event.webappId &&
-        event.reason &&
-        WEBAPP_PUBLISH_CHANGE_REASONS.has(event.reason)
-      ) {
-        void refreshWebappPublishState(event.webappId).catch(() => undefined);
         return;
       }
       refreshWebItems().catch(() => undefined);
@@ -2961,6 +2909,12 @@ export function AppShell() {
   }, [activeChatWorkPanelVisible]);
 
   useEffect(() => {
+    if (!showWorkPanelMainChatTab || workPanelMainChatOwnerKey !== activeChatWorkPanelOwnerKey) {
+      setWorkPanelMainChatOwnerKey(null);
+    }
+  }, [showWorkPanelMainChatTab, activeChatWorkPanelOwnerKey, workPanelMainChatOwnerKey]);
+
+  useEffect(() => {
     const ownerChatId = workPanelFullscreenOwnerChatId;
     if (!ownerChatId) return;
     const adopted = isLocalDocumentDraftOwnerKey(ownerChatId)
@@ -3051,53 +3005,8 @@ export function AppShell() {
     if (!item || item.kind !== "webapp") {
       return;
     }
-    const runtime = webappRuntimeById[item.id];
-    if (runtime?.status === "starting" || runtime?.status === "running" || runtime?.status === "error") {
-      return;
-    }
-    if (webappStartInFlightRef.current.has(item.id)) {
-      return;
-    }
-    if (webappStopInFlightRef.current.has(item.id)) {
-      return;
-    }
-
-    webappStartInFlightRef.current.add(item.id);
-    setWebappRuntimeById((current) => ({
-      ...current,
-      [item.id]: {
-        status: "starting",
-        webUrl: current[item.id]?.webUrl ?? "",
-        message: t("webapp.starting"),
-        state: current[item.id]?.state ?? null
-      }
-    }));
-    window.electronAPI.webs.webapps.start(item.id)
-      .then((result) => {
-        setWebappRuntimeById((current) => ({
-          ...current,
-          [item.id]: {
-            status: result.ok && result.state?.webUrl ? "running" : "error",
-            webUrl: result.state?.webUrl ?? "",
-            message: result.message,
-            state: result.state
-          }
-        }));
-      })
-      .catch((error) => {
-        setWebappRuntimeById((current) => ({
-          ...current,
-          [item.id]: {
-            status: "error",
-            webUrl: "",
-            message: error instanceof Error ? error.message : String(error),
-            state: null
-          }
-        }));
-      })
-      .finally(() => {
-        webappStartInFlightRef.current.delete(item.id);
-      });
+    if (webappRuntimeById[item.id]?.status === "error") return;
+    void ensureWebappRuntimeStarted(item).catch(() => undefined);
   }, [activeWebEntryKey, webItems, webappRuntimeById]);
 
   useEffect(() => {
@@ -3153,8 +3062,11 @@ export function AppShell() {
     const resizer = event.currentTarget;
     const dragState = {
       initialWidth: renderedWorkPanelWidth,
+      settledWidth: renderedWorkPanelWidth,
+      mainChatOwnerKey: isWorkPanelMainChatActive ? activeChatWorkPanelOwnerKey : null,
       pointerId: event.pointerId,
       startClientX: event.clientX,
+      direction: null as "expand" | "collapse" | null,
     };
     workPanelResizeStateRef.current = dragState;
     try {
@@ -3166,12 +3078,31 @@ export function AppShell() {
     const handlePointerMove = (pointerEvent: PointerEvent) => {
       if (pointerEvent.pointerId !== dragState.pointerId) return;
       if (pointerEvent.cancelable) pointerEvent.preventDefault();
-      setPreferredWorkPanelWidth(resolveWorkPanelWidthFromDrag({
+      if (!dragState.direction && pointerEvent.clientX !== dragState.startClientX) {
+        dragState.direction = pointerEvent.clientX > dragState.startClientX ? "expand" : "collapse";
+      }
+      const nextState = resolveWorkPanelDragState({
         initialWidth: dragState.initialWidth,
         startClientX: dragState.startClientX,
         currentClientX: pointerEvent.clientX,
         availableWidth: appContentWidth || undefined,
-      }));
+      });
+      dragState.settledWidth = nextState.settledWidth;
+      setPreferredWorkPanelWidth(nextState.settledWidth);
+      setWorkPanelDragPreviewWidth(nextState.width);
+      setWorkPanelDragMainChatOpacity(nextState.mainChatOpacity);
+      const showGuide = dragState.direction &&
+        appContentWidth >= WORK_PANEL_MAIN_MIN_WIDTH + WORK_PANEL_MIN_WIDTH &&
+        (dragState.direction === "collapse" ||
+          (dragState.initialWidth >= workPanelMaxWidth &&
+            appContentWidth - nextState.width < WORK_PANEL_MAIN_MIN_WIDTH));
+      if (showGuide) {
+        const target = dragState.direction === "expand"
+          ? appContentWidth - dragState.initialWidth + WORK_PANEL_COLLAPSE_DRAG_BUFFER
+          : WORK_PANEL_MAIN_MIN_WIDTH - WORK_PANEL_COLLAPSE_DRAG_BUFFER;
+        setWorkPanelDragGuide({ direction: dragState.direction!,
+          left: Math.max(WORK_PANEL_COLLAPSED_MAIN_GAP, Math.min(appContentWidth - WORK_PANEL_MIN_WIDTH, target)) });
+      } else setWorkPanelDragGuide(null);
     };
     const cleanup = () => {
       window.removeEventListener("pointermove", handlePointerMove, true);
@@ -3185,6 +3116,13 @@ export function AppShell() {
         workPanelResizeStateRef.current = null;
       }
       setIsWorkPanelResizing(false);
+      setWorkPanelDragPreviewWidth(null);
+      setWorkPanelDragGuide(null);
+      setPreferredWorkPanelWidth(dragState.settledWidth);
+      if (dragState.mainChatOwnerKey && dragState.settledWidth >= workPanelMaxWidth) {
+        setWorkPanelMainChatOwnerKey(dragState.mainChatOwnerKey);
+      }
+      setWorkPanelDragMainChatOpacity(1);
       try {
         if (resizer.hasPointerCapture(dragState.pointerId)) {
           resizer.releasePointerCapture(dragState.pointerId);
@@ -4106,7 +4044,11 @@ export function AppShell() {
   const appShellStyle = {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`,
     "--work-panel-collapsed-main-gap": `${WORK_PANEL_COLLAPSED_MAIN_GAP}px`,
+    "--work-panel-main-min-width": `${WORK_PANEL_MAIN_MIN_WIDTH}px`,
     "--chat-work-panel-width": `${renderedWorkPanelWidth}px`,
+    "--work-panel-main-chat-opacity": activeChatWorkPanelVisible && isWorkPanelResizing
+      ? workPanelDragMainChatOpacity
+      : 1,
     "--assistant-dock-embedded-width": `${renderedCopilotDockWidth}px`,
   } as CSSProperties;
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
@@ -4190,6 +4132,10 @@ export function AppShell() {
       : command;
     const result = reduceWorkPanelCommand(currentState, normalizedCommand);
     if (result.ok) {
+      if (command.type === "openItem" || command.type === "openBlobPopup" || command.type === "activateItem" ||
+          command.type === "closeWorkspace" || command.type === "hideWorkspace" || command.type === "adoptLocalDocumentWorkspace") {
+        setWorkPanelMainChatOwnerKey(current => current === command.ownerChatId ? null : current);
+      }
       for (const dialog of previousState.dialogItems ?? []) {
         if (!result.nextState.dialogItems?.some((entry) => entry.transferId === dialog.transferId)) {
           void window.electronAPI.chatWorkPanelTabContextMenu.webDialog({ action: "close", transferId: dialog.transferId }).catch(() => undefined);
@@ -4422,15 +4368,15 @@ export function AppShell() {
   async function handleOpenWebappInWorkPanel(
     ownerChatId: string,
     target: { id: string; label: string },
-  ) {
+  ): Promise<boolean> {
     const item = webItemsRef.current.find(
       (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === target.id,
     );
-    if (!item) return;
+    if (!item) return false;
     const openWindowIds = await window.electronAPI.webs.webapps.listOpenWindows().catch((): string[] => []);
     if (openWindowIds.includes(item.id)) {
-      await window.electronAPI.webs.webapps.openWindow(item.id).catch(() => undefined);
-      return;
+      const focused = await window.electronAPI.webs.webapps.openWindow(item.id).catch(() => null);
+      return focused?.ok === true;
     }
 
     let nextState = removeWebappWorkPanelReferences(item.id);
@@ -4443,7 +4389,7 @@ export function AppShell() {
         title: item.label,
       },
     });
-    if (!opened.ok || !opened.item) return;
+    if (!opened.ok || !opened.item) return false;
     nextState = opened.nextState;
     commitWorkPanelState(nextState);
     setWebappPresentationOwners((current) => ({
@@ -4454,10 +4400,12 @@ export function AppShell() {
       current.includes(item.entryKey) ? current : [...current, item.entryKey],
     );
     void ensureWebappRuntimeStarted(item).catch(() => undefined);
+    return true;
   }
 
-  function handleFocusWebappWindow(webappId: string) {
-    void window.electronAPI.webs.webapps.openWindow(webappId).catch(() => undefined);
+  async function handleFocusWebappWindow(webappId: string): Promise<boolean> {
+    const focused = await window.electronAPI.webs.webapps.openWindow(webappId).catch(() => null);
+    return focused?.ok === true;
   }
 
   const closeChatWorkPanelWorkspace = useCallback((chatId: string, force = false) => {
@@ -4744,6 +4692,7 @@ export function AppShell() {
         usesWebappSurface ? "has-webapp-surface" : "",
         usesWorkPanelWebappSurface ? "has-work-panel-webapp-surface" : "",
         usesServiceWebviewSurface ? "has-service-webview-surface" : "",
+        usesWebclientBackgroundSurface ? "has-webclient-background-surface" : "",
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
         location.pathname === "/help" ? "has-help-surface" : "",
@@ -4754,8 +4703,10 @@ export function AppShell() {
         assistantCopilotOpen && copilotDockOverlayMode ? "has-assistant-dock-overlay" : "",
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
         isMainChatCollapsedByWorkPanel ? "is-main-chat-collapsed-by-work-panel" : "",
+        isWorkPanelMainChatActive ? "is-main-chat-in-work-panel" : "",
         workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
         showMainChatWorkPanelToggle ? "has-main-chat-header-actions" : "",
+        showSidebarHeaderNavigation ? "has-fixed-sidebar-header-navigation" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         windowFullScreen ? "is-window-fullscreen" : "",
@@ -4805,16 +4756,6 @@ export function AppShell() {
                   >
                     <SettingsSidebarIcon kind="search" />
                   </button>
-                  <button
-                    type="button"
-                    className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
-                    aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
-                    title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
-                    aria-expanded={!effectiveSidebarCollapsed}
-                    onClick={toggleSidebarCollapsed}
-                  >
-                    <SidebarActionIcon kind="sidebar_left" />
-                  </button>
                 </>
               ) : null}
               <button
@@ -4837,7 +4778,7 @@ export function AppShell() {
               >
                 <SidebarActionIcon kind="forward" />
               </button>
-              {sidebarMode === "primary" && assistantLauncherVisible ? (
+              {sidebarMode === "primary" && assistantLauncherVisible && !usesWebappSurface ? (
                 <button
                   type="button"
                   className={`app-system-bar-action${assistantCopilotOpen ? " is-active" : ""}`}
@@ -4855,6 +4796,18 @@ export function AppShell() {
                   title={t("sidebar.copilot.title")}
                 >
                   <SidebarActionIcon kind="sidebar_left" className="sidebar-right-panel-icon" />
+                </button>
+              ) : null}
+              {sidebarMode === "primary" ? (
+                <button
+                  type="button"
+                  className={`app-system-bar-action app-system-bar-sidebar-toggle${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
+                  aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                  title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                  aria-expanded={!effectiveSidebarCollapsed}
+                  onClick={toggleSidebarCollapsed}
+                >
+                  <SidebarActionIcon kind="sidebar_left" />
                 </button>
               ) : null}
             </nav>
@@ -4901,6 +4854,14 @@ export function AppShell() {
       </div>
       <div className="app-window-controls-layer">
         {mainChatHeaderActions}
+        {showSidebarHeaderNavigation ? <DesktopChatHeaderNavigation
+          isCollapsed={effectiveSidebarCollapsed}
+          leftInset={effectiveSidebarCollapsed && !showMainChatWorkPanelToggle ? 21 : isMac ? 78 : 8}
+          canGoBack={Boolean(desktopNavigationBackStep)} canGoForward={Boolean(desktopNavigationForwardStep)}
+          onSearch={shellOverlay.openGlobalSearch} onBack={handleSidebarBackNavigation}
+          onForward={handleSidebarForwardNavigation} onToggle={toggleSidebarCollapsed}
+          onInsetChange={setChatHeaderLeftInset}
+        /> : null}
       </div>
       <div className="app-sidebar-shell">
         <AppSidebar
@@ -4913,7 +4874,7 @@ export function AppShell() {
           pendingPath={pendingSidebarNavigationPath}
           assistantDockOpen={assistantCopilotOpen}
           assistantLauncherDisabled={isAgentWebclientMainRoute}
-          assistantLauncherVisible={assistantLauncherVisible}
+          assistantLauncherVisible={assistantLauncherVisible && !usesWebappSurface}
           marketEnabled={marketEnabled}
           helpEnabled={helpEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
@@ -5033,8 +4994,12 @@ export function AppShell() {
         <span className="app-sidebar-resizer-line" aria-hidden="true" />
       </div>
       <div ref={appContentRef} className="app-content">
-        <main className="app-main">
+        {showWebappCopilotButton ? (
+          <WebappCopilotButton open={assistantCopilotOpen} onToggle={toggleSystemBarAssistantDock} />
+        ) : null}
+        <main className="app-main" id="desktop-main-chat-panel">
           <ServiceWebviewSurfaceHost
+            headerLayout={mainChatHeaderLayout}
             mainChatObserverActive={!assistantCopilotOpen}
             chatDefaultAgentKey={chatRuntimeAgent.agentKey}
             activeServiceId={activeServiceId}
@@ -5113,9 +5078,11 @@ export function AppShell() {
                     copilotAgentOptions={copilotAgentOptions}
                     onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
                     webappPublishStateById={webappPublishStateById}
+                    webappPublishInfo={webappPublishInfo}
+                    webappRuntimeById={webappRuntimeStates}
                     onWebItemsRefresh={refreshWebItems}
-                    onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}
-                    onWebappPublishStateChange={handleSettingsWebappPublishStateChange}
+                    onWebappRuntimeStateChange={handleWebappRuntimeStateChange}
+                    onWebappPublishStatusChange={handleWebappPublishStatusChange}
                     onShareWebapp={(item) => shellOverlay.openWebappShare(item.id, item.label)}
                     onAssistantSettingsChange={setAssistantSettings}
                     onTunnelHubEnabledChange={setTunnelHubEnabled}
@@ -5185,7 +5152,7 @@ export function AppShell() {
                 !marketSettingsLoaded
                   ? null
                   : marketEnabled
-                    ? <RouteSuspense><FunctionalMarketPage onShareItem={(item) => shellOverlay.openMarketShare(item.id, item.version, item.name)} /></RouteSuspense>
+                    ? <RouteSuspense><FunctionalMarketPage onShareItem={(item) => shellOverlay.openMarketShare(item.id, item.version, item.name)} onRequestAgentChatNavigate={requestNavigationWithAgentChatFocus} /></RouteSuspense>
                     : <Navigate to="/control-center" replace />
               }
             />
@@ -5253,6 +5220,8 @@ export function AppShell() {
             />
           ) : null}
         </main>
+        {activeChatWorkPanelVisible && isWorkPanelResizing && workPanelDragGuide &&
+          <WorkPanelResizeGuide direction={workPanelDragGuide.direction} left={workPanelDragGuide.left} />}
         {activeChatWorkPanelVisible ? (
           <div
             className={`chat-work-panel-resizer${isWorkPanelResizing ? " is-active" : ""}`}
@@ -5273,10 +5242,17 @@ export function AppShell() {
           activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
           activeOwnerKey={activeChatWorkPanelVisible ? activeChatWorkPanelOwnerKey : null}
           state={workPanelState}
+          selectedNewTabs={selectedWorkPanelNewTabs}
+          setSelectedNewTabs={setSelectedWorkPanelNewTabs}
           dispatchCommand={dispatchWorkPanelCommand}
           fullscreenOwnerChatId={workPanelFullscreenOwnerChatId}
           onFullscreenChange={changeWorkPanelFullscreen}
           hasPanelToggle={activeChatWorkPanelVisible && showMainChatWorkPanelToggle}
+          mainChatTab={showWorkPanelMainChatTab ? {
+            active: isWorkPanelMainChatActive,
+            onActivate: () => setWorkPanelMainChatOwnerKey(activeChatWorkPanelOwnerKey),
+            onDeactivate: () => setWorkPanelMainChatOwnerKey(null),
+          } : undefined}
           isMac={isMac}
           isWindows={isWindows}
           launcher={{
@@ -5289,9 +5265,7 @@ export function AppShell() {
             projectDisabledReason: workPanelProjectDisabledReason,
             lastRunId: workPanelLastRunId,
             webapps: workPanelWebapps,
-            onOpenWebapp: (ownerChatId, webapp) => {
-              void handleOpenWebappInWorkPanel(ownerChatId, webapp);
-            },
+            onOpenWebapp: handleOpenWebappInWorkPanel,
             onFocusWebappWindow: handleFocusWebappWindow,
           }}
         />
@@ -5300,7 +5274,7 @@ export function AppShell() {
           itemMap={webItemMap}
           mountedEntryKeys={mountedWebEntryKeys}
           presentations={webappPresentationOwners}
-          workPanelState={workPanelState}
+          activeWorkPanelItemId={activeWorkPanelItemId}
           activeWorkPanelChatId={activeChatWorkPanelChatId}
           workPanelVisible={activeChatWorkPanelVisible}
           onCloseWebItem={(entryKey) => {
@@ -5520,7 +5494,7 @@ export function AppShell() {
           )}
         />
       ) : null}
-      <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />
+      <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} runtimeResetStage={runtimeResetStage} />
       <HistoryGestureOverlay
         canGoBack={Boolean(desktopNavigationBackStep)}
         canGoForward={Boolean(desktopNavigationForwardStep)}

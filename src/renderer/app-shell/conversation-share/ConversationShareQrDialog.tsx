@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { QRCode, Spin } from "antd";
+import type { ConversationShareOmittedResource } from "../../../shared/contracts";
+import { ConversationShareOmissions } from "./ConversationShareOmissions";
 import type { TranslateFunction } from "../../../shared/i18n";
 
 declare const __DESKTOP_BRAND_ICON_DATA_URL__: string;
@@ -12,7 +14,7 @@ type ShareFeedback = { kind: "loading" | "success" | "error"; message: string };
 type ConversationShareQrDialogProps = {
   url: string;
   filenameBase: string;
-  warning: string;
+  omittedResources: ConversationShareOmittedResource[];
   t: TranslateFunction;
   onClose: () => void;
   onFeedback: (feedback: ShareFeedback) => void;
@@ -62,7 +64,7 @@ async function copyQrPng(dataBase64: string): Promise<void> {
 export function ConversationShareQrDialog({
   url,
   filenameBase,
-  warning,
+  omittedResources,
   t,
   onClose,
   onFeedback,
@@ -122,6 +124,9 @@ export function ConversationShareQrDialog({
               value={url}
               type="canvas"
               size={QR_CODE_SIZE}
+              // Keep the canvas and exported PNG readable on the white QR card in every theme.
+              color="#000"
+              bgColor="#fff"
               bordered={false}
               icon={__DESKTOP_BRAND_ICON_DATA_URL__}
               iconSize={QR_BRAND_ICON_SIZE}
@@ -134,7 +139,7 @@ export function ConversationShareQrDialog({
           <button type="button" disabled={Boolean(qrAction)} onClick={() => void exportQr("copy")}>{qrAction === "copy" ? <Spin size="small" /> : null}{t("sidebar.chat.shareQrCopy")}</button>
           <button type="button" disabled={Boolean(qrAction)} onClick={() => void exportQr("save")}>{qrAction === "save" ? <Spin size="small" /> : null}{t("sidebar.chat.shareQrSave")}</button>
         </div>
-        {warning ? <p className="conversation-share-warning" role="note">{warning}</p> : null}
+        <ConversationShareOmissions items={omittedResources} t={t} />
       </div>
     </section>
   );

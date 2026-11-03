@@ -778,7 +778,7 @@ test("public Bridge policy separates page interactions from backend data capabil
       version: 1
     }
   };
-  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["connector.list", "connector.describe", "connector.invoke", "desktop.assistant.chat", "assistant.events", "assistant.stop", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read", "kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]));
+  assert.deepEqual(new Set(getWebappAllowedActions(item, "backendActionToken")), new Set(["connector.list", "connector.describe", "connector.invoke", "desktop.assistant.chat", "assistant.events", "assistant.stop", "assistant.execute", "skill.list", "skill.describe", "artifact.list", "artifact.get", "artifact.read", "kanban.boards.list", "kanban.issues.list", "kanban.issues.get"]));
   assert.equal(isWebappActionAllowed(item, "localPageGateway", "desktop.native.clipboard.writeText"), true);
   assert.equal(isWebappActionAllowed(item, "backendActionToken", "desktop.native.clipboard.writeText"), false);
   const token = issueWebappActionToken(item, "backendActionToken");
@@ -899,6 +899,17 @@ test("install policy supports idempotence, upgrades, conflicts, downgrades, and 
   const parallelId = webappId("parallel-app");
   assert.equal((await installWebsiteAppArchiveFromPath(app, parallelArchive, { expectedId: parallelId })).ok, true);
   assert.deepEqual(readWebappItems(app).map((item) => item.id).sort(), [installId, parallelId].sort());
+});
+
+test("Desktop import rejects Linux packages without leaving an installed app", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-linux-target-"));
+  const app = createApp(path.join(root, "home"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const id = webappId("linux-contract-app");
+  const archive = await writeArchive(root, "linux-contract-app", { target: "linux-x64" });
+  await assert.rejects(installWebsiteAppArchiveFromPath(app, archive), /linux-x64.*not compatible/u);
+  assert.equal(fs.existsSync(getWebappDir(app, id)), false);
+  assert.deepEqual(readWebappItems(app), []);
 });
 
 test("Tooling and Desktop installer share path and native artifact policy", async (t) => {

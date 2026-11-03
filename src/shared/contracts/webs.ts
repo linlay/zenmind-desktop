@@ -116,7 +116,9 @@ export interface WebappRuntimeState {
 export interface WebListResult {
   ok: boolean;
   items: WebEntry[];
+  webappRuntimeStates: Record<string, WebappRuntimeState | null>;
   webappPublishStates: Record<string, WebappPublishState | null>;
+  webappPublishInfo: WebappPublishInfo;
   message: string;
 }
 
@@ -124,7 +126,7 @@ export interface WebsChangedEvent {
   changedAt: string;
   phase?: "changed" | "disposing";
   webappId?: string;
-  reason?: DesktopWebappChangedReason;
+  reason?: DesktopWebappChangedReason | "tunnel-status-changed";
 }
 
 export type WebsChangedListener = (event: WebsChangedEvent) => void;

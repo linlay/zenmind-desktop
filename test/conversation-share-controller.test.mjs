@@ -4,20 +4,22 @@ const { createConversationShare } = await import("../dist-electron/main/modules/
 const limits = { maxManifestBytes: 4096, maxResourceBytes: 1024 };
 const record = { id: "opaque_abc", kind: "conversation", title: "Frozen", url: "https://share.example.test/share/opaque_abc", createdAt: 1786363200000, lastAccessedAt: null };
 
-for (const unauthorized of [false, true]) test(`conversation preparation forwards bytes without Main JSON parsing (unauthorized=${unauthorized})`, async () => {
+for (const unauthorized of [false, true]) test(`conversation preparation forwards bytes and omission details without Main JSON parsing (unauthorized=${unauthorized})`, async () => {
   const manifest = Buffer.from('{"opaque":"already prepared by worker"}');
   const resources = [{ id: "a".repeat(24), name: "report.txt", mimeType: "text/plain", bytes: Buffer.from("data") }];
+  const omittedResources = [{ name: "missing.txt", reason: unauthorized ? "forbidden" : "not_found" }];
   let preparedCount = 0;
   const result = await createConversationShare({ async prepareChatShare(chatId, actualLimits) {
     assert.equal(chatId, "chat-1"); assert.equal(actualLimits, limits); preparedCount++;
-    return { ok: true, bytes: manifest, attachments: resources, attachmentsOmitted: true, attachmentUnauthorized: unauthorized };
+    return { ok: true, bytes: manifest, attachments: resources, omittedResources };
   } }, { async publish(prepare) {
     const value = await prepare(limits);
     assert.equal(value.manifest, manifest); assert.equal(value.resources, resources);
-    assert.match(value.warning, unauthorized ? /身份|identity/iu : /附件|attachment/iu);
-    return { ok: true, record, warning: value.warning };
+    assert.equal(Object.hasOwn(value, "warning"), false);
+    return { ok: true, record };
   } }, { chatId: " chat-1 " });
   assert.equal(result.ok, true); assert.equal(result.record, record); assert.equal(preparedCount, 1);
+  assert.equal(result.omittedResources, omittedResources);
 });
 
 test("invalid conversation ID never invokes public publishing", async () => {

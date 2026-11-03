@@ -4065,6 +4065,23 @@ div.sidebar-chats-group-popover {
   --sidebar-toolbar-height: 89px;
 }
 
+.app-shell.is-mac-platform.has-fixed-sidebar-header-navigation .app-sidebar.is-collapsed {
+  --sidebar-toolbar-height: 44px;
+}
+
+/* Reserve room for the lone expand button in the rail, never in page content. */
+.app-shell.is-mac-platform.has-fixed-sidebar-header-navigation:not(.has-main-chat-header-actions) .app-sidebar.is-collapsed {
+  --sidebar-toolbar-height: 61px;
+}
+
+.app-shell.is-windows-platform.is-window-fullscreen.has-fixed-sidebar-header-navigation:not(.has-main-chat-header-actions) .app-sidebar.is-collapsed {
+  padding-top: 40px;
+}
+
+.app-shell.is-mac-platform.has-fixed-sidebar-header-navigation .app-sidebar .sidebar-chrome .sidebar-top-actions > :not(.sidebar-assistant-top-button) {
+  display: none;
+}
+
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-mac {
   padding: 0;
   justify-content: center;
@@ -4270,12 +4287,13 @@ div.sidebar-chats-group-popover {
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-icon {
+  display: none;
   width: 16px;
   height: 16px;
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger>.sidebar-account-menu-avatar {
-  display: none;
+  display: inline-flex;
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger-settings-icon {
@@ -4288,6 +4306,16 @@ div.sidebar-chats-group-popover {
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-label {
   display: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-menu-trigger.is-signed-out .sidebar-link-label {
+  display: block;
+  width: 36px;
+  font-size: 10px;
+  line-height: 11px;
+  white-space: normal;
+  text-align: center;
+  text-overflow: clip;
 }
 
 .app-sidebar .sidebar-primary-link.sidebar-link-active,

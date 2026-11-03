@@ -51,7 +51,7 @@ export function prepareDesktopSsoSessionRestore(app: App): DesktopSsoRestorePrep
   const sessionPath = getSessionPath(app);
   desktopSsoRuntimeState.loadedSessionPath = sessionPath;
   desktopSsoRuntimeState.currentStatus = createSignedOutStatus(t("sso.notSignedIn"));
-  desktopSsoRuntimeState.currentAccessToken = "";
+  desktopSsoRuntimeState.currentBusinessToken = "";
   desktopSsoRuntimeState.currentIdToken = "";
   desktopSsoRuntimeState.currentSessionAuthMode = null;
   desktopSsoRuntimeState.currentSessionApp = null;
@@ -65,6 +65,11 @@ export function prepareDesktopSsoSessionRestore(app: App): DesktopSsoRestorePrep
   if (configResult.error || !configResult.config) {
     desktopSsoRuntimeState.currentStatus = createFailedStatus(configResult.error || t("sso.missingOidcConfig"));
     return { requiresRemoteValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
+  }
+  if (configResult.config.tokenExchange) {
+    desktopSsoRuntimeState.currentStatus = createPendingStatus(t("sso.restoringLogin"));
+    desktopSsoRuntimeState.unverifiedCookieSessionCandidate = true;
+    return { requiresRemoteValidation: true, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
   }
   if (!fs.existsSync(sessionPath)) {
     return { requiresRemoteValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
@@ -120,7 +125,7 @@ export function prepareDesktopSsoSessionRestore(app: App): DesktopSsoRestorePrep
 
 export function markDesktopSsoRestoreTemporarilyUnavailable(app: App, message: string) {
   desktopSsoRuntimeState.loadedSessionPath = getSessionPath(app);
-  desktopSsoRuntimeState.currentAccessToken = "";
+  desktopSsoRuntimeState.currentBusinessToken = "";
   desktopSsoRuntimeState.currentIdToken = "";
   desktopSsoRuntimeState.currentSessionAuthMode = null;
   desktopSsoRuntimeState.currentSessionApp = null;

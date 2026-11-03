@@ -8,7 +8,6 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const {
-  redactSelectionReferencesForTrace,
   registerAgentWebclientBridgeIpcHandlers,
 } = require("../dist-electron/main/modules/agent-platform/ipc.js");
 const {
@@ -116,28 +115,6 @@ async function createDraftFileFixture(t) {
   return state;
 }
 
-test("selection reference text is redacted from Desktop realtime traces", () => {
-  const frame = {
-    frame: "request",
-    type: "/api/btw",
-    payload: {
-      message: "explain",
-      references: [{
-        id: "selection-1",
-        type: "selection",
-        text: "private selected text",
-        annotation: "private annotation",
-        annotationIndex: 7,
-      }],
-    },
-  };
-  const redacted = redactSelectionReferencesForTrace(frame);
-  assert.equal(redacted.payload.references[0].text, "<REDACTED_SELECTION>");
-  assert.equal(frame.payload.references[0].text, "private selected text");
-  assert.equal(redacted.payload.references[0].annotation, "<REDACTED_SELECTION>");
-  assert.equal(redacted.payload.references[0].annotationIndex, 7);
-  assert.equal(frame.payload.references[0].annotation, "private annotation");
-});
 
 function createSender(id, url) {
   const sender = new EventEmitter();
@@ -560,6 +537,20 @@ test("referring to the right-side preview does not automatically add file refere
   await flush();
   assert.equal(runtime.calls.queries[0].payload.message, "请修改右侧文件");
   assert.equal(runtime.calls.queries[0].payload.references, undefined);
+});
+
+test("surface debug trace keeps the original selection reference before forwarding", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  await openSession(runtime, sender, "debug-selection");
+  const reference = { type: "selection", id: "selection-1", text: "selected text", annotation: "annotation text", annotationIndex: 7 };
+  send(runtime, sender, "debug-selection", { frame: "request", id: "debug-selection", type: "/api/query",
+    payload: { agentKey: "agent-1", message: "explain", references: [reference] } });
+  await flush();
+  const entry = runtime.calls.debugTraces.find((entry) => entry.data.id === "debug-selection");
+  assert.deepEqual(entry.data.payload.references, [reference]);
+  assert.deepEqual(runtime.calls.queries[0].payload.references, [reference]);
 });
 
 test("Main Chat query rechecks route ownership after asynchronous availability", async () => {
@@ -1792,18 +1783,18 @@ test("connected Platform keeps historical Chat loading independent of a stalled 
 });
 
 
-test("physical diagnostics redact selection text and annotation in requests and replay without mutating wire data", () => {
-  const { sanitizeAgentRealtimeDebugValue } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-debug-trace.js");
+test("physical debug traces preserve selection text and annotation in requests and replay without mutating wire data", () => {
+  const { serializeAgentRealtimeDebugValue } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-debug-trace.js");
   const reference = { type: "selection", id: "selected-1", text: "private original", annotation: "private instruction", annotationIndex: 9 };
   for (const frame of [
     { frame: "request", type: "/api/query", payload: { references: [reference] } },
     { frame: "request", type: "/api/steer", payload: { references: [reference] } },
     { frame: "stream", event: { type: "request.query", references: [reference] } },
   ]) {
-    const trace = sanitizeAgentRealtimeDebugValue(frame);
-    assert.equal(JSON.stringify(trace).includes("private"), false);
-    const redacted = (trace.payload || trace.event).references[0];
-    assert.equal(redacted.annotationIndex, 9);
+    const trace = serializeAgentRealtimeDebugValue(frame);
+    assert.deepEqual(trace, frame);
+    assert.notEqual(trace, frame);
+    assert.notEqual((trace.payload || trace.event).references[0], reference);
     assert.equal(reference.text, "private original");
     assert.equal(reference.annotation, "private instruction");
   }

@@ -47,10 +47,15 @@ export async function connectWebSocket(dependencies: RealtimeConnectionDependenc
   if (!dependencies.snapshot.enabled || !dependencies.imSessionToken) {
     return;
   }
+  const sessionToken = dependencies.imSessionToken;
   const ticketResponse = await dependencies.requestJson<unknown>("/api/v1/ws-tickets", {
     method: "POST",
     body: "{}"
   });
+  // Sign-out or a newer refresh cleared this session while the ticket was in flight.
+  if (!dependencies.snapshot.enabled || dependencies.imSessionToken !== sessionToken) {
+    return;
+  }
   const ticketRecord = isRecord(ticketResponse) ? ticketResponse : {};
   const ticket = readText(ticketRecord.ticket);
   if (!ticket) {

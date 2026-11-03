@@ -8,10 +8,10 @@
   --mac-traffic-light-safe-area: 88px;
   --bg-base: #FFFFFF;
   --bg-canvas: transparent;
-  --surface: rgba(255, 255, 255, 0.18);
-  --surface-strong: rgba(255, 255, 255, 0.9);
-  --surface-soft: rgba(255, 255, 255, 0.28);
-  --surface-sidebar: rgba(247, 250, 252, 0.78);
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-strong: rgba(255, 255, 255, 0.96);
+  --surface-soft: rgba(255, 255, 255, 0.86);
+  --surface-sidebar: rgba(247, 250, 252, 0.9);
   --ink: #1D2129;
   --ink-soft: #4E5969;
   --ink-muted: #86909C;

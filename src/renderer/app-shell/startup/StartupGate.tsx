@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import type { DesktopRuntimeResetStage } from "../../../shared/contracts";
 import type {
   ServiceId,
   ServiceState,
@@ -31,6 +33,22 @@ export function StartupLoadingScreen({
   loginBusy: boolean;
 }) {
   const { t } = useI18n();
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetStage, setResetStage] = useState<DesktopRuntimeResetStage>("preparing");
+  const [resetError, setResetError] = useState("");
+  useEffect(() => window.electronAPI.settings.onRuntimeResetProgress(setResetStage), []);
+  async function recover(action: "reinstall" | "rollback") {
+    if (resetBusy || !window.confirm(t(action === "rollback" ? "settings.reset.rollbackConfirm" : "settings.reset.confirmMessage"))) return;
+    setResetBusy(true);
+    setResetError("");
+    try {
+      const result = await window.electronAPI.settings.resetRuntimeEnv(action);
+      if (!result.ok) { setResetError(result.message); setResetBusy(false); }
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : String(error));
+      setResetBusy(false);
+    }
+  }
   const completedButNotReady =
     startupRestoreState.phase === "succeeded" &&
     !servicesLoading &&
@@ -145,6 +163,9 @@ export function StartupLoadingScreen({
         {startupRestoreState.phase === "failed" && startupRestoreState.message ? (
           <div className="startup-loading-error" role="alert">{startupRestoreState.message}</div>
         ) : null}
+        {resetError ? <div className="startup-loading-error" role="alert">{resetError}</div> : null}
+        {resetBusy ? <p role="status">{t(`settings.reset.progress.${resetStage}`)}</p> : null}
+        {startupRestoreState.recoveryBackupPath ? <p>{t("settings.reset.backupPath", { path: startupRestoreState.recoveryBackupPath })}</p> : null}
         {servicesError ? <div className="startup-loading-error" role="alert">{servicesError}</div> : null}
 
         {startupRestoreState.authenticationRequired || timedOut || hasFailure ? (
@@ -152,10 +173,15 @@ export function StartupLoadingScreen({
             {startupRestoreState.authenticationRequired ? <button type="button" className="action-button" disabled={loginBusy} onClick={onLogin}>
               {t("providerRegister.loginAction")}
             </button> : null}
-            <button type="button" className="action-button" onClick={onRefresh}>
+            <button type="button" className="action-button" disabled={resetBusy} onClick={onRefresh}>
               {t("startup.action.refresh")}
             </button>
-            <button type="button" className="text-button" onClick={onOpenControlCenter}>
+            {hasFailure && !startupRestoreState.authenticationRequired ? (
+              <button type="button" className="action-button" disabled={resetBusy} onClick={() => void recover(startupRestoreState.recoveryBackupPath ? "rollback" : "reinstall")}>
+                {t(startupRestoreState.recoveryBackupPath ? "settings.reset.rollback" : "settings.reset.reinstall")}
+              </button>
+            ) : null}
+            <button type="button" className="text-button" disabled={resetBusy} onClick={onOpenControlCenter}>
               {t("startup.action.openControlCenter")}
             </button>
           </div>

@@ -6,7 +6,7 @@ import type {
   KanbanSettingsResult
 } from "../../../shared/contracts";
 import { t } from "../../support/i18n/main-i18n";
-import { getDesktopDeviceId, readDesktopSsoAccessTokenUser } from "../identity";
+import { getDesktopDeviceId, readDesktopSsoIdTokenUser } from "../identity";
 import { KanbanConnectionFallbackState, getKanbanConfigPath, getKanbanDeviceInfo, readKanbanCloudConfig, readKanbanSettings, resolveKanbanWsConnection, saveKanbanSettings, writeKanbanCloudConfig } from "./runtime-config";
 import { KanbanRuntimeOptions } from "./runtime-options";
 import {
@@ -100,7 +100,7 @@ export function saveSettings(dependencies: RuntimeSettingsDependencies, input: K
 export function currentUser(dependencies: RuntimeSettingsDependencies): KanbanCurrentUser {
   const user = dependencies.options.canUseDesktopSsoCredentials?.() === false
     ? null
-    : readDesktopSsoAccessTokenUser(dependencies.options.app);
+    : readDesktopSsoIdTokenUser(dependencies.options.app);
   if (user?.sub?.trim()) {
     return {
       id: user.sub.trim(),

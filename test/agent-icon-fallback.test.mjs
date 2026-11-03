@@ -29,3 +29,16 @@ test("explicit image URLs retain their image rendering in every Agent mode", () 
     assert.doesNotMatch(html, /data-agent-icon-name/);
   }
 });
+
+test("all six Agent avatars provide the layers used by WebClient finite motions", () => {
+  for (const name of ["general", "coder", "kbase", "team", "executor", "proxy"]) {
+    const html = render({ icon: { name }, interactive: false });
+    assert.match(html, /data-agent-pointer-disabled="true"/);
+    assert.match(html, /data-agent-spin=""/);
+    assert.match(html, /data-agent-eyes=""/);
+    assert.match(html, /data-agent-mouth=""/);
+    assert.match(html, /data-agent-smile=""/);
+    assert.match(html, new RegExp(`rx="56" ry="${name === "team" ? 6 : 9}"`));
+    assert.equal((html.match(/data-agent-face=/g) || []).length, name === "team" ? 3 : 1);
+  }
+});

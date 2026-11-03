@@ -343,6 +343,7 @@ const webappManifestV2Schema = z.strictObject({
     "darwin-arm64",
     "darwin-x64",
     "darwin-universal",
+    "linux-x64",
     "win32-arm64",
     "win32-x64"
   ]),

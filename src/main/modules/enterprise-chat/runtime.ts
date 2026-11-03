@@ -21,7 +21,7 @@ import type {
   EnterpriseChatSendSupportBundleInput,
   EnterpriseChatSnapshot
 } from "../../../shared/contracts";
-import { getDesktopDeviceInfo, getDesktopSsoAccessToken } from "../identity";
+import { getDesktopDeviceInfo, getDesktopSsoBusinessToken } from "../identity";
 import {
   EnterpriseChatActionLedger,
   type EnterpriseChatActionLedgerEntry
@@ -51,7 +51,6 @@ export class EnterpriseChatRuntime {
   private readonly fetchImpl: FetchLike;
   private readonly createWebSocket: (url: string) => WebSocketLike;
   private readonly getIdentityToken: () => string | null;
-  private readonly refreshIdentityToken?: () => Promise<string | null>;
   private readonly getDeviceInfo: () => { deviceId: string; deviceName: string };
   private readonly platform: NodeJS.Platform;
   private readonly selectFiles: () => Promise<string[]>;
@@ -79,6 +78,8 @@ export class EnterpriseChatRuntime {
   private actionReceiptFlushPromise: Promise<void> | null = null;
   private pendingRequests = new Map<string, PendingWebSocketRequest>();
   private refreshPromise: Promise<EnterpriseChatSnapshot> | null = null;
+  private rejectedIdentityToken = "";
+  private sessionEpoch = 0;
 
   constructor(options: EnterpriseChatRuntimeOptions) {
     this.app = options.app;
@@ -88,8 +89,7 @@ export class EnterpriseChatRuntime {
     this.serverUrl = normalizeServerUrl(this.getServerUrl());
     this.fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
     this.createWebSocket = options.createWebSocket ?? createDefaultWebSocket;
-    this.getIdentityToken = options.getIdentityToken ?? getDesktopSsoAccessToken;
-    this.refreshIdentityToken = options.refreshIdentityToken;
+    this.getIdentityToken = options.getIdentityToken ?? getDesktopSsoBusinessToken;
     this.getDeviceInfo = options.getDeviceInfo ?? (() => getDesktopDeviceInfo(this.app));
     this.platform = options.platform ?? process.platform;
     this.selectFiles = options.selectFiles ?? (async () => []);
@@ -144,6 +144,8 @@ export class EnterpriseChatRuntime {
   async refresh() { return sessionController.refresh(this.sessionControllerDependencies); }
 
   async reloadConfiguration(enabled: boolean) { return sessionController.reloadConfiguration(this.sessionControllerDependencies, enabled); }
+
+  handleCredentialChanged() { return sessionController.handleCredentialChanged(this.sessionControllerDependencies); }
 
   private async performRefresh() { return sessionController.performRefresh(this.sessionControllerDependencies); }
 
@@ -294,7 +296,10 @@ export class EnterpriseChatRuntime {
       setEnabled: this.setEnabled.bind(this),
       updateServerUrl: this.updateServerUrl.bind(this),
       exchangeSession: this.exchangeSession.bind(this),
-      get refreshIdentityToken() { return runtime.refreshIdentityToken; },
+      get rejectedIdentityToken() { return runtime.rejectedIdentityToken; },
+      set rejectedIdentityToken(value) { runtime.rejectedIdentityToken = value; },
+      get sessionEpoch() { return runtime.sessionEpoch; },
+      set sessionEpoch(value) { runtime.sessionEpoch = value; },
       get imSessionToken() { return runtime.imSessionToken; },
       set imSessionToken(value) { runtime.imSessionToken = value; },
       get imSessionTokenExpiresAt() { return runtime.imSessionTokenExpiresAt; },

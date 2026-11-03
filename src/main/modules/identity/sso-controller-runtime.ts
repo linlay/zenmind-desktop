@@ -15,10 +15,10 @@ import {
   parseDesktopSsoCookieUserInfo,
   getDesktopSsoCookieAccessTokenExchangeUrl,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
-  getDesktopSsoAccessTokenCookieDetails,
+  getDesktopSsoBusinessTokenCookieDetails,
   getDesktopSsoWebSessionClearCookies,
-  getDesktopSsoAccessTokenCookieLookups,
-  getDesktopSsoAccessToken,
+  getDesktopSsoBusinessTokenCookieLookups,
+  getDesktopSsoBusinessToken,
   completeDesktopSsoRestoredBrowserSession,
   completeDesktopSsoBrowserSession,
   completeDesktopSsoBrowserSessionUserInfo,
@@ -43,16 +43,201 @@ import {
   markDesktopSsoRestoreTemporarilyUnavailable,
   getDesktopSsoStatus
 } from "./sso-restore";
-import { readDesktopSsoAccessToken, desktopSsoAccessTokenNeedsRefresh } from "./sso-session";
+import { readDesktopSsoIdToken, desktopSsoIdTokenNeedsRefresh, commitRenewedDesktopSsoSession } from "./sso-session";
+import { DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG } from "./sso-defaults";
 import { loadDesktopSsoConfig } from "./sso-config";
 import { t } from "../../support/i18n/main-i18n";
 import { getDesktopSsoBrowserUserAgent } from "../../infrastructure/electron/platform-adapter";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
+import { desktopSsoRuntimeState, subscribeDesktopSsoCredentialRevocation } from "./sso-state";
+import { createSsoCredentialStore } from "./sso-credentials";
+import { requestSsoTokens, SsoTokenRequestError } from "./sso-token-client";
+import { readJsonPathValue } from "./sso-cookie-token";
+import { removeIdTokenFile } from "./sso-session";
+import { getJwtPayload } from "./sso-claims";
+import { SsoKnownFailure, describeSsoFailure, type SsoFailureStage } from "./sso-failures";
 
 export function createDesktopSsoController(options: DesktopSsoControllerOptions) {
   let accessTokenRefreshPromise: Promise<string> | null = null;
   let restorePromise: Promise<DesktopSsoRestoreResult> | null = null;
   let restoreState: DesktopSsoRestoreResult["state"] | "uninitialized" = "uninitialized";
+  const credentials = createSsoCredentialStore(options.app, options.platform);
+  let oidcBlocked = false;
+  let oidcGeneration = desktopSsoRuntimeState.credentialGeneration;
+  let oidcFlight: Promise<string> | null = null;
+  let oidcFlightGeneration = -1;
+  let oidcAbort: AbortController | null = null;
+  let renewalTimer: ReturnType<typeof setTimeout> | undefined;
+  let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  let scheduledRenewalExpiry = 0;
+  const clearTimers = () => { clearTimeout(renewalTimer); clearTimeout(expiryTimer); };
+  const unsubscribeRevocation = subscribeDesktopSsoCredentialRevocation(() => {
+    // Expiry withdraws the published proof but may still accept this account's in-flight renewal.
+    if (oidcFlightGeneration !== desktopSsoRuntimeState.credentialGeneration) {
+      oidcAbort?.abort(); scheduledRenewalExpiry = 0;
+    }
+    clearTimers();
+  });
+  if (typeof options.app.once === "function") options.app.once("before-quit", () => {
+    oidcAbort?.abort(); clearTimers(); unsubscribeRevocation();
+  });
+
+  function scheduleOidcRenewal(idToken: string) {
+    clearTimers();
+    const payload = getJwtPayload(idToken);
+    const expiry = Number(payload.exp) * 1000;
+    const lifetime = typeof payload.iat === "number" && payload.iat * 1000 < expiry ? expiry - payload.iat * 1000 : 75 * 60_000;
+    const skew = Math.min(15 * 60_000, lifetime * 0.2);
+    const arm = (at: number, action: () => void, assign: (timer: ReturnType<typeof setTimeout>) => void) => {
+      const tick = () => {
+        const remaining = at - Date.now();
+        const timer = setTimeout(remaining > 2_147_483_647 ? tick : action, Math.max(1, Math.min(2_147_483_647, remaining)));
+        assign(timer); timer.unref();
+      };
+      tick();
+    };
+    // Never re-arm automatic renewal for an upstream response with unchanged expiry.
+    if (scheduledRenewalExpiry !== expiry) {
+      scheduledRenewalExpiry = expiry;
+      arm(expiry - skew, () => { void exchangeOidcTokens().catch(() => {}); }, timer => { renewalTimer = timer; });
+    }
+    arm(expiry, () => {
+      if (getDesktopSsoBusinessToken() !== idToken) return;
+      const status = markDesktopSsoRestoreTemporarilyUnavailable(options.app, t("sso.restoreTemporarilyUnavailable"));
+      const removalError = removeIdTokenFile(options.app, false);
+      if (removalError) safeConsoleError("failed to withdraw expired SSO ID token", { errorType: removalError.name });
+      restoreState = "temporarily_unavailable";
+      options.getMainWindow()?.webContents.send("sso.statusChanged", status);
+      publishRestoreResult({ state: restoreState, status });
+    }, timer => { expiryTimer = timer; });
+  }
+
+  function currentOidcConfig() {
+    const config = loadDesktopSsoConfig(options.app).config;
+    return config?.tokenExchange ? config : null;
+  }
+
+  async function exchangeOidcTokens(interactive = false, fetchImpl?: CookieAccessTokenFetch) {
+    const config = currentOidcConfig();
+    if (!config) return "";
+    // Business retries must not complete or close an interactive login.
+    if (!interactive && desktopSsoRuntimeState.pendingLogin) {
+      throw new Error(t("sso.waitingForIam"));
+    }
+    if (oidcGeneration !== desktopSsoRuntimeState.credentialGeneration) {
+      oidcBlocked = false;
+      oidcGeneration = desktopSsoRuntimeState.credentialGeneration;
+    }
+    if (oidcFlight && oidcFlightGeneration === desktopSsoRuntimeState.credentialGeneration) return oidcFlight;
+    oidcAbort?.abort();
+    if (!interactive && oidcBlocked) throw new Error("SSO automatic renewal stopped; sign in or retry manually.");
+    const generation = desktopSsoRuntimeState.credentialGeneration;
+    oidcFlightGeneration = generation;
+    const abort = new AbortController();
+    oidcAbort = abort;
+    const current = () => generation === desktopSsoRuntimeState.credentialGeneration &&
+      currentOidcConfig()?.tokenExchange?.url === config.tokenExchange!.url &&
+      currentOidcConfig()?.tokenRefresh?.url === config.tokenRefresh!.url;
+    const request = fetchImpl || ((url, init) => options.session.defaultSession.fetch(url, init));
+    const operation = (async () => {
+      let stage: SsoFailureStage = "readCredentials";
+      try {
+        const previous = interactive ? null : credentials.read(new URL(config.tokenExchange!.url).origin);
+        stage = "readCookie";
+        const cookie = previous?.refreshToken ? undefined :
+          await buildDesktopSsoCookieHeader(options.session.defaultSession, config.tokenExchange!.url);
+        if (!current()) return "";
+        if (!previous?.refreshToken && !cookie) throw new SsoTokenRequestError(401);
+        stage = "tokenRequest";
+        const requestKind = previous?.refreshToken ? "refresh" : "exchange";
+        const next = await requestSsoTokens(config, request, {
+          previous, cookie, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(20_000)])
+        });
+        if (!current()) return "";
+        // A rotated refresh token must survive a later userinfo/Cookie publication failure.
+        stage = "saveCredentials";
+        if (previous) credentials.save(next);
+        const userConfig = config.userInfo!;
+        stage = "accountRequest";
+        const response = await request(userConfig.url, {
+          method: "GET", credentials: "omit", redirect: "manual", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(5_000)]),
+          headers: { Accept: "application/json", Authorization: `Bearer ${next.idToken}` }
+        });
+        if (!current()) return "";
+        // A downstream userinfo rejection does not prove the refresh token invalid.
+        if (!response.ok) throw new SsoKnownFailure("accountHttp", response.status);
+        stage = "accountParse";
+        let value: unknown;
+        try { value = await response.json(); } catch { throw new SsoKnownFailure("accountJson"); }
+        if (!current()) return "";
+        const field = (key: string) => {
+          const raw = readJsonPathValue(value, key);
+          return typeof raw === "string" ? raw.trim() : typeof raw === "number" ? String(raw) : "";
+        };
+        const name = field(userConfig.namePath);
+        const email = field(userConfig.emailPath);
+        const avatarUrl = field(userConfig.avatarUrlPath);
+        const user = {
+          sub: field(userConfig.subPath),
+          ...(name ? { name } : {}),
+          ...(email ? { email } : {}),
+          ...(avatarUrl ? { avatarUrl } : {})
+        };
+        if (!user.sub) throw new SsoKnownFailure("accountMissing");
+        if (previous?.accountId && previous.accountId !== user.sub) throw new SsoKnownFailure("accountChanged");
+        next.accountId = user.sub;
+        stage = "saveCredentials";
+        credentials.save(next);
+        stage = "syncCookies";
+        await syncAccessTokenCookies(next.idToken);
+        if (!current()) return "";
+        stage = "publishSession";
+        const status = interactive
+          ? completeDesktopSsoRestoredBrowserSession(options.app, next.idToken, user, { interactive: true })
+          : commitRenewedDesktopSsoSession(options.app, next.idToken, {
+            ...user,
+            issuer: config.browserOrigin || new URL(config.tokenExchange!.url).origin,
+            audience: config.claims?.audience || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG.audience
+          });
+        scheduleOidcRenewal(next.idToken);
+        restoreState = "authenticated";
+        oidcBlocked = false;
+        options.getMainWindow()?.webContents.send("sso.statusChanged", status);
+        publishRestoreResult({ state: "authenticated", status, accessToken: next.idToken });
+        const expiresAt = Number(getJwtPayload(next.idToken).exp) * 1000;
+        console.info("[sso-renewal] completed", {
+          kind: requestKind, interactive, expiresAt,
+          ...(previous ? { expiryAdvanced: expiresAt > Number(getJwtPayload(previous.idToken).exp) * 1000 } : {})
+        });
+        return next.idToken;
+      } catch (error) {
+        if (!current()) return "";
+        const failure = describeSsoFailure(stage, error);
+        safeConsoleError("SSO operation failed", { stage: failure.stage, code: failure.code, status: failure.status });
+        oidcBlocked = true;
+        const definitive = error instanceof SsoTokenRequestError && error.status === 401;
+        const expired = desktopSsoIdTokenNeedsRefresh(options.app, 0);
+        if (definitive || expired || !getDesktopSsoStatus(options.app).authenticated) {
+          const status = definitive
+            ? clearDesktopSsoLocalSession(options.app, t("sso.restoreSessionExpired"))
+            : markDesktopSsoRestoreTemporarilyUnavailable(options.app, failure.message);
+          restoreState = definitive ? "signed_out" : "temporarily_unavailable";
+          removeIdTokenFile(options.app, definitive);
+          await clearDesktopSsoAccessTokenCookies();
+          if (definitive) await clearRestoredDesktopSsoCookies();
+          options.getMainWindow()?.webContents.send("sso.statusChanged", status);
+          publishRestoreResult({ state: restoreState, status });
+        }
+        // No response body or transport exception (which may contain credentials) crosses this boundary.
+        throw new Error(failure.message);
+      }
+    })();
+    const flight = operation.finally(() => {
+      if (oidcFlight === flight) { oidcFlight = null; oidcAbort = null; }
+    });
+    oidcFlight = flight;
+    return flight;
+  }
 
   function publishRestoreResult(result: DesktopSsoRestoreResult) {
     try {
@@ -181,6 +366,8 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     fetchImpl?: CookieAccessTokenFetch,
     exchangeOptions: { signal?: AbortSignal; persist?: boolean; requireCookie?: boolean; syncCookies?: boolean; bearerToken?: string } = {}
   ) {
+    if (currentOidcConfig()) return exchangeOidcTokens(true, fetchImpl);
+    const generation = desktopSsoRuntimeState.credentialGeneration;
     const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);
     if (!exchangeUrl) {
       return "";
@@ -190,6 +377,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     const cookieHeader = bearerToken === undefined
       ? await buildDesktopSsoCookieHeader(ssoSession, exchangeUrl)
       : "";
+    if (generation !== desktopSsoRuntimeState.credentialGeneration) return "";
     if (bearerToken !== undefined && !bearerToken.trim()) {
       throw new DesktopSsoRestoreRequestError("Desktop SSO refresh token is missing.", 401);
     }
@@ -221,7 +409,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       request,
       { persist: exchangeOptions.persist }
     );
-    if (!accessToken) {
+    if (!accessToken || generation !== desktopSsoRuntimeState.credentialGeneration) {
       return "";
     }
     if (exchangeOptions.syncCookies !== false) {
@@ -231,7 +419,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   }
 
   async function syncAccessTokenCookies(accessToken: string) {
-    const details = getDesktopSsoAccessTokenCookieDetails(options.app, accessToken);
+    const details = getDesktopSsoBusinessTokenCookieDetails(options.app, accessToken);
     await Promise.all(details.map((cookie) => options.session.defaultSession.cookies.set(cookie)));
     await flushDesktopSsoSessions();
   }
@@ -265,7 +453,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
 
   async function clearDesktopSsoAccessTokenCookies() {
     const targetSessions = [options.session.defaultSession];
-    const cookieLookups = getDesktopSsoAccessTokenCookieLookups(options.app);
+    const cookieLookups = getDesktopSsoBusinessTokenCookieLookups(options.app);
     await Promise.all(cookieLookups.flatMap((details) =>
       targetSessions.map(async (targetSession) => {
         await targetSession.cookies.remove(details.url, details.name);
@@ -280,6 +468,11 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   }
 
   async function performDesktopSsoSessionRestore(timeoutMs: number): Promise<DesktopSsoRestoreResult> {
+    if (currentOidcConfig()) {
+      prepareDesktopSsoSessionRestore(options.app);
+      try { await exchangeOidcTokens(); } catch { /* Classified and published by the coordinator. */ }
+      return { state: restoreState === "uninitialized" ? "signed_out" : restoreState, status: getDesktopSsoStatus(options.app) };
+    }
     const wasTemporarilyUnavailable = restoreState === "temporarily_unavailable";
     const preparation = prepareDesktopSsoSessionRestore(options.app);
     console.info("[sso-restore] preparation", {
@@ -293,8 +486,8 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       const result: DesktopSsoRestoreResult = {
         state: preparation.status.authenticated ? "authenticated" : "signed_out",
         status: preparation.status,
-        ...(preparation.status.authenticated && getDesktopSsoAccessToken()
-          ? { accessToken: getDesktopSsoAccessToken() || undefined }
+        ...(preparation.status.authenticated && getDesktopSsoBusinessToken()
+          ? { accessToken: getDesktopSsoBusinessToken() || undefined }
           : {})
       };
       restoreState = result.state;
@@ -308,7 +501,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     try {
       // Saved credentials remain private recovery candidates. Only explicitly
       // configured Bearer restoration may present the token to the login origin.
-      const candidateToken = restoreAuthMode === "bearer" ? readDesktopSsoAccessToken(options.app) : "";
+      const candidateToken = restoreAuthMode === "bearer" ? readDesktopSsoIdToken(options.app) : "";
       if (restoreAuthMode === "bearer" && !candidateToken) {
         throw new DesktopSsoRestoreRequestError("Desktop SSO restore token is missing.", 401);
       }
@@ -393,6 +586,13 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   }
 
   return {
+    async retrySession() {
+      if (!currentOidcConfig()) return getDesktopSsoStatus(options.app);
+      if (restoreState === "signed_out") return getDesktopSsoStatus(options.app);
+      oidcBlocked = false;
+      try { await exchangeOidcTokens(); } catch { /* Return the classified public status only. */ }
+      return getDesktopSsoStatus(options.app);
+    },
     returnToApp() {
       focusMainWindowAfterDesktopSso(options);
     },
@@ -402,16 +602,15 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         publishRestoreResult({
           state: "authenticated",
           status,
-          ...(getDesktopSsoAccessToken() ? { accessToken: getDesktopSsoAccessToken() || undefined } : {})
+          ...(getDesktopSsoBusinessToken() ? { accessToken: getDesktopSsoBusinessToken() || undefined } : {})
         });
       } else if (!status.authenticated && !status.pending) {
         restoreState = "signed_out";
         publishRestoreResult({ state: "signed_out", status });
       }
+      // Status also changes during background renewal and config reloads. Only
+      // the explicit returnToApp path may activate the native window.
       options.getMainWindow()?.webContents.send("sso.statusChanged", status);
-      if (status.authenticated) {
-        focusMainWindowAfterDesktopSso(options);
-      }
     },
     async openBrowserUrl(input: {
       url: string;
@@ -497,8 +696,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       await flushDesktopSsoSessions();
     },
     async validateBrowserSession(fetchImpl?: BrowserCookieFetch) {
+      const generation = desktopSsoRuntimeState.credentialGeneration;
       const browserSession = await probeBrowserSession(fetchImpl);
-      if (!browserSession) {
+      if (!browserSession || generation !== desktopSsoRuntimeState.credentialGeneration) {
         return null;
       }
       const sessionStatus = completeDesktopSsoBrowserSession(options.app);
@@ -508,12 +708,14 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       return completeDesktopSsoBrowserSessionUserInfo(options.app, browserSession.userInfo);
     },
     async fetchBrowserUserInfo(fetchImpl?: BrowserCookieFetch) {
+      const generation = desktopSsoRuntimeState.credentialGeneration;
       const config = getDesktopSsoCookieUserInfoConfig(options.app);
       if (!config) {
         return null;
       }
       const ssoSession = options.session.defaultSession;
       const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, config.url);
+      if (generation !== desktopSsoRuntimeState.credentialGeneration) return null;
       const headers: Record<string, string> = {
         Accept: "application/json"
       };
@@ -522,6 +724,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }
       const request = fetchImpl || ((url, init) => ssoSession.fetch(url, init) as unknown as ReturnType<BrowserCookieFetch>);
       const response = await request(config.url, { method: "GET", headers });
+      if (generation !== desktopSsoRuntimeState.credentialGeneration) return null;
       if (!response.ok) {
         if (!config.required) {
           return getDesktopSsoStatus(options.app);
@@ -541,7 +744,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         getDesktopSsoSetCookieHeaders(response.headers)
       );
       try {
-        return completeDesktopSsoBrowserUserInfo(options.app, await response.json());
+        const userInfo = await response.json();
+        if (generation !== desktopSsoRuntimeState.credentialGeneration) return null;
+        return completeDesktopSsoBrowserUserInfo(options.app, userInfo);
       } catch (error) {
         if (!config.required) {
           return getDesktopSsoStatus(options.app);
@@ -552,20 +757,34 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     async exchangeBrowserCookieAccessToken(fetchImpl?: CookieAccessTokenFetch) {
       return exchangeBrowserCookieAccessToken(fetchImpl);
     },
-    async refreshBrowserCookieAccessTokenIfNeeded(force = false, fetchImpl?: CookieAccessTokenFetch) {
+    async ensureBusinessToken(force = false, fetchImpl?: CookieAccessTokenFetch) {
+      if (currentOidcConfig()) {
+        if (!force && getDesktopSsoStatus(options.app).authenticated && !desktopSsoIdTokenNeedsRefresh(options.app)) {
+          return getDesktopSsoBusinessToken() || "";
+        }
+        // Expiry must withdraw a previously published token even after the retry budget is exhausted.
+        if (oidcBlocked && getDesktopSsoStatus(options.app).authenticated && desktopSsoIdTokenNeedsRefresh(options.app, 0)) {
+          removeIdTokenFile(options.app, false);
+          const status = markDesktopSsoRestoreTemporarilyUnavailable(options.app, t("sso.restoreTemporarilyUnavailable"));
+          restoreState = "temporarily_unavailable";
+          publishRestoreResult({ state: restoreState, status });
+        }
+        if (restoreState === "signed_out") return "";
+        return exchangeOidcTokens(false, fetchImpl);
+      }
       const status = getDesktopSsoStatus(options.app);
       if (!status.authenticated || !getDesktopSsoCookieAccessTokenExchangeUrl(options.app)) {
         return "";
       }
-      if (!force && !desktopSsoAccessTokenNeedsRefresh(options.app)) {
-        return getDesktopSsoAccessToken() || "";
+      if (!force && !desktopSsoIdTokenNeedsRefresh(options.app)) {
+        return getDesktopSsoBusinessToken() || "";
       }
       if (accessTokenRefreshPromise) {
         return accessTokenRefreshPromise;
       }
-      const previousToken = getDesktopSsoAccessToken();
+      const previousToken = getDesktopSsoBusinessToken();
       const useBearer = loadDesktopSsoConfig(options.app).config?.sessionRestore?.authMode === "bearer";
-      const isCurrentSession = () => getDesktopSsoAccessToken() === previousToken &&
+      const isCurrentSession = () => getDesktopSsoBusinessToken() === previousToken &&
         getDesktopSsoStatus(options.app).updatedAt === status.updatedAt;
       const request = fetchImpl || ((url, init) => options.session.defaultSession.fetch(url, init));
       accessTokenRefreshPromise = exchangeBrowserCookieAccessToken(async (url, init) => {
@@ -593,7 +812,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           const definitive = isDefinitiveRestoreFailure(error);
           // A business 401 can request renewal without proving the Desktop identity invalid.
           // Force bypasses the refresh schedule, not the validity of the current session.
-          if (!definitive && !desktopSsoAccessTokenNeedsRefresh(options.app, 0)) throw error;
+          if (!definitive && !desktopSsoIdTokenNeedsRefresh(options.app, 0)) throw error;
           const nextStatus = definitive
             ? clearDesktopSsoLocalSession(options.app, t("sso.restoreSessionExpired"))
             : markDesktopSsoRestoreTemporarilyUnavailable(options.app, t("sso.restoreTemporarilyUnavailable"));
@@ -613,8 +832,8 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         return {
           state: restoreState,
           status: getDesktopSsoStatus(options.app),
-          ...(restoreState === "authenticated" && getDesktopSsoAccessToken()
-            ? { accessToken: getDesktopSsoAccessToken() || undefined }
+          ...(restoreState === "authenticated" && getDesktopSsoBusinessToken()
+            ? { accessToken: getDesktopSsoBusinessToken() || undefined }
             : {})
         } satisfies DesktopSsoRestoreResult;
       }
@@ -626,13 +845,14 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       return restorePromise;
     },
     async retryDesktopSsoSessionRestoreIfNeeded(timeoutMs = 5_000) {
+      if (currentOidcConfig() && oidcBlocked) return { state: restoreState === "uninitialized" ? "signed_out" as const : restoreState, status: getDesktopSsoStatus(options.app) };
       if (restoreState !== "temporarily_unavailable") {
         return {
           state: restoreState === "uninitialized"
             ? (getDesktopSsoStatus(options.app).authenticated ? "authenticated" : "signed_out")
             : restoreState,
           status: getDesktopSsoStatus(options.app),
-          ...(getDesktopSsoAccessToken() ? { accessToken: getDesktopSsoAccessToken() || undefined } : {})
+          ...(getDesktopSsoBusinessToken() ? { accessToken: getDesktopSsoBusinessToken() || undefined } : {})
         } satisfies DesktopSsoRestoreResult;
       }
       if (!restorePromise) {
@@ -713,6 +933,22 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       return createWebSessionClaims(getRecordValue(responseBody, "user"), exchangeConfig.url, exchangeConfig.claims);
     },
     async logoutWebSession(fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
+      const oidcConfig = currentOidcConfig();
+      if (oidcConfig) {
+        desktopSsoRuntimeState.credentialGeneration++;
+        oidcAbort?.abort();
+        const url = oidcConfig.logoutUrl;
+        if (!url) return false;
+        const cookie = await buildDesktopSsoCookieHeader(options.session.defaultSession, url);
+        const response = await options.session.defaultSession.fetch(url, {
+          method: "GET", redirect: "manual", credentials: "omit", signal: AbortSignal.timeout(5_000),
+          headers: { Accept: "application/json", ...(cookie ? { Cookie: cookie } : {}) }
+        });
+        if (response.status !== 401 && !response.ok && !(response.status >= 300 && response.status < 400)) {
+          throw new Error(`SSO logout request failed (${response.status}).`);
+        }
+        return true;
+      }
       const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);
       if (!exchangeConfig) {
         return false;

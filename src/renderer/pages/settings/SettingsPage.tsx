@@ -9,13 +9,14 @@ import { SettingsActionButton } from "./SettingsActionButton";
 import { DesktopActionConfirmationSettingsDialog } from "./DesktopActionConfirmationSettingsDialog";
 import { DEFAULT_CONFIRMATION_TIMEOUT_SECONDS, MAX_CONFIRMATION_TIMEOUT_SECONDS, normalizeConfirmationTimeoutSeconds } from "../../../shared/desktop-action-confirmation";
 import { WebappImportDropTarget } from "./WebappImportDropTarget";
+import { getWebappPublishPresentation } from "./webappPublishPresentation";
 import { getWebappRuntimeLabel, WebappRuntimeSettingsDialog } from "./WebappRuntimeSettingsDialog";
 import { LocalServicesSettings } from "./LocalServicesSettings";
 import { DebugUpdatePanel } from "../../updates/DebugUpdatePanel";
 import { DesktopUpdateCard } from "../../updates/DesktopUpdateCard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { DeleteOutlined, CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined, CloudUploadOutlined, InfoCircleOutlined } from "@ant-design/icons";
+import { DeleteOutlined, CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined } from "@ant-design/icons";
 import { Button, Input, InputNumber, Modal, Popconfirm, QRCode, Segmented, Select, Switch, Tabs, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
@@ -31,6 +32,8 @@ import type {
   WebappAuthMode,
   WebappPublishInfo,
   WebappPublishState,
+  WebappPublishStatusResult,
+  WebListResult,
   WebappRuntimeCheckResult,
   WebappRuntimeState,
   WebappRuntimeSettings,
@@ -131,10 +134,12 @@ type SettingsPageProps = {
   runningWebappCount: number;
   copilotAgentOptions: AssistantNavAgentItem[];
   onRefreshCopilotAgentOptions: () => Promise<void>;
-  webappPublishStateById: Record<string, WebappPublishState | null>;
-  onWebItemsRefresh: () => void | Promise<unknown>;
-  onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
-  onWebappPublishStateChange?: (id: string, state: WebappPublishState | null) => void;
+  webappPublishStateById: Readonly<Record<string, WebappPublishState | null>>;
+  webappPublishInfo: WebappPublishInfo | null;
+  webappRuntimeById: Readonly<Record<string, WebappRuntimeState | null>>;
+  onWebItemsRefresh: () => Promise<WebListResult>;
+  onWebappRuntimeStateChange: (id: string, state: WebappRuntimeState | null, message?: string) => void;
+  onWebappPublishStatusChange: (id: string, result: Pick<WebappPublishStatusResult, "info" | "state">) => void;
   onShareWebapp?: (item: WebappEntry) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
   onTunnelHubEnabledChange?: (enabled: boolean) => void;
@@ -162,6 +167,7 @@ type WebappDraftSnapshot = {
 type AboutAppCardProps = {
   isWindows: boolean;
   runtimeResetPending: boolean;
+  runtimeResetStage: import("../../../shared/contracts").DesktopRuntimeResetStage;
   runtimeResetResult: DesktopRuntimeEnvResetResult | null;
   onResetRuntimeEnv: () => void | Promise<void>;
 };
@@ -1378,7 +1384,7 @@ function WsServerDebugDialog({
       wsUrl.searchParams.set("source", "settings-debug-ws-console");
       const socket = new WebSocket(wsUrl.toString());
       socketRef.current = socket;
-      appendDebugLogEntry(setEntries, "system", wsUrl.toString().replace(token, "token-redacted"));
+      appendDebugLogEntry(setEntries, "system", wsUrl.toString());
       socket.onopen = () => {
         setConnected(true);
         setPending(false);
@@ -2248,6 +2254,7 @@ function LocalWsServerDebugCard() {
 function AboutAppCard({
   isWindows,
   runtimeResetPending,
+  runtimeResetStage,
   runtimeResetResult,
   onResetRuntimeEnv
 }: AboutAppCardProps) {
@@ -2389,13 +2396,19 @@ function AboutAppCard({
             disabled={runtimeResetPending}
             onClick={() => void onResetRuntimeEnv()}
           >
-            {runtimeResetPending ? t("settings.reset.running") : t("settings.reset.action")}
+            {runtimeResetPending ? t(`settings.reset.progress.${runtimeResetStage}`) : t("settings.reset.action")}
           </Button>
         </div>
       </div>
       {isWindows && <WindowsDataRootCard />}
     </div>
   );
+}
+
+function usageSsoIdentityKey(status: DesktopSsoStatus) {
+  return status.authenticated && !status.pending
+    ? JSON.stringify([status.user?.issuer, status.user?.sub, status.user?.audience, status.completedSteps.accessToken])
+    : "anonymous";
 }
 
 export function SettingsPage({
@@ -2414,9 +2427,11 @@ export function SettingsPage({
   copilotAgentOptions,
   onRefreshCopilotAgentOptions,
   webappPublishStateById,
+  webappPublishInfo,
+  webappRuntimeById,
   onWebItemsRefresh,
   onWebappRuntimeStateChange,
-  onWebappPublishStateChange,
+  onWebappPublishStatusChange,
   onShareWebapp,
   onAssistantSettingsChange,
   onTunnelHubEnabledChange,
@@ -2486,7 +2501,6 @@ export function SettingsPage({
   const webappImportBusyRef = useRef(false);
   const [webappDeletingId, setWebappDeletingId] = useState("");
   const [webappRuntimePendingId, setWebappRuntimePendingId] = useState("");
-  const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({});
   const [webappRuntimeCheckById, setWebappRuntimeCheckById] = useState<Record<string, WebappRuntimeCheckResult | null>>({});
   const [webappRuntimeSettings, setWebappRuntimeSettings] = useState<WebappRuntimeSettings>({
     schemaVersion: 1,
@@ -2494,7 +2508,6 @@ export function SettingsPage({
   });
   const [webappRuntimeSettingsTarget, setWebappRuntimeSettingsTarget] = useState<{ webappId?: string } | null>(null);
   const webappRuntimeSettingsRevisionRef = useRef(0);
-  const [webappPublishInfoById, setWebappPublishInfoById] = useState<Record<string, WebappPublishInfo | null>>({});
   const [webappPublishPendingId, setWebappPublishPendingId] = useState("");
   const [webappDetailsOpen, setWebappDetailsOpen] = useState(false);
   const [webappLogTarget, setWebappLogTarget] = useState<WebappLogTarget>("main");
@@ -2745,25 +2758,16 @@ export function SettingsPage({
 
   useEffect(() => {
     if (activeSection !== "webapps") return;
-    let cancelled = false;
-    // Populate the whole catalog on entry, rather than revealing status on selection.
-    void Promise.allSettled(webappItems.map(async (item) => {
-      const result = await window.electronAPI.webs.webapps.getStatus(item.id);
-      if (!cancelled) {
-        setWebappRuntimeById((current) => ({ ...current, [item.id]: result.state }));
-      }
-    }));
-    return () => { cancelled = true; };
-  }, [activeSection, webappItems]);
+    void onWebItemsRefresh().catch((reason) =>
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error"));
+  }, [activeSection, selectedWebapp?.id]);
 
   useEffect(() => {
     if (activeSection !== "webapps" || !selectedWebapp) {
       return;
     }
-    void refreshSelectedWebappStatus(selectedWebapp.id);
     void refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
     void refreshSelectedWebappUserConfig(selectedWebapp.id);
-    void refreshWebappPublishStatus(selectedWebapp.id);
   }, [activeSection, selectedWebapp?.id]);
 
   useEffect(() => {
@@ -2902,7 +2906,20 @@ export function SettingsPage({
       setUsageProfile(null);
       void refreshUsageProfile();
     };
-    const unsubscribeSso = window.electronAPI.sso.onStatusChanged(invalidate);
+    // Same-account renewals also publish status. Re-query only when the account or token
+    // availability changes, so a Transit Hub rejection can never pace itself on SSO events.
+    let usageIdentity: string | undefined;
+    let receivedSsoEvent = false;
+    const unsubscribeSso = window.electronAPI.sso.onStatusChanged((status) => {
+      receivedSsoEvent = true;
+      const next = usageSsoIdentityKey(status);
+      if (next === usageIdentity) return;
+      usageIdentity = next;
+      invalidate();
+    });
+    void window.electronAPI.sso.getStatus().then((status) => {
+      if (!receivedSsoEvent) usageIdentity = usageSsoIdentityKey(status);
+    }).catch(() => undefined);
     const unsubscribeConfig = window.electronAPI.settings.onDesktopConfigChanged(invalidate);
     return () => { ++usageRequestGeneration.current; unsubscribeSso(); unsubscribeConfig(); };
   }, [shouldReadUsageProfile]);
@@ -3434,10 +3451,6 @@ export function SettingsPage({
     }
   }
 
-  async function refreshWebItemsFromSettings() {
-    await onWebItemsRefresh();
-  }
-
   function beginAddWebsiteItem() {
     pendingWebsiteSelectionIdRef.current = "";
     pendingWebsiteSnapshotRef.current = null;
@@ -3481,7 +3494,7 @@ export function SettingsPage({
           pendingWebsiteSelectionIdRef.current = nextSelectedId;
           setSelectedWebsiteId(nextSelectedId);
         }
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3505,7 +3518,7 @@ export function SettingsPage({
         } else {
           clearWebsiteDraft();
         }
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3529,7 +3542,7 @@ export function SettingsPage({
         } else {
           clearWebsiteDraft();
         }
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3548,7 +3561,7 @@ export function SettingsPage({
         result.ok ? "success" : "error"
       );
       if (result.ok) {
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("websites", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3571,7 +3584,7 @@ export function SettingsPage({
         if (result.item) {
           setSelectedWebappId(result.item.id);
         }
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
         if (result.item) navigate(buildWebappSettingsPath(result.item.id));
       }
     } catch (reason) {
@@ -3579,23 +3592,6 @@ export function SettingsPage({
     } finally {
       webappImportBusyRef.current = false;
       setWebappImportPending(false);
-    }
-  }
-
-  async function refreshSelectedWebappStatus(webappId = selectedWebapp?.id ?? "") {
-    const id = webappId.trim();
-    if (!id) {
-      return;
-    }
-    try {
-      const result = await window.electronAPI.webs.webapps.getStatus(id);
-      setWebappRuntimeById((current) => ({
-        ...current,
-        [id]: result.state
-      }));
-      onWebappRuntimeStateChange?.(id, result.state, result.message);
-    } catch (reason) {
-      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
     }
   }
 
@@ -3684,33 +3680,17 @@ export function SettingsPage({
     setNotice((current) => current?.sectionId === "webapps" ? null : current);
   }
 
-  async function refreshWebappPublishStatus(webappId = selectedWebapp?.id ?? "") {
-    const id = webappId.trim();
-    if (!id) {
-      return;
-    }
-    try {
-      const result = await window.electronAPI.webs.webapps.getPublishStatus(id);
-      setWebappPublishInfoById((current) => ({ ...current, [id]: result.info }));
-      onWebappPublishStateChange?.(id, result.state);
-    } catch (reason) {
-      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
-    }
-  }
-
   async function handlePublishWebapp(item: WebappEntry) {
     setWebappPublishPendingId(item.id);
     try {
       const startResult = await window.electronAPI.webs.webapps.start(item.id);
-      setWebappRuntimeById((current) => ({ ...current, [item.id]: startResult.state }));
-      onWebappRuntimeStateChange?.(item.id, startResult.state, startResult.message);
+      onWebappRuntimeStateChange(item.id, startResult.state, startResult.message);
       if (!startResult.ok || !startResult.state) {
         showSectionResultNotice("webapps", startResult);
         return;
       }
       const result = await window.electronAPI.webs.webapps.publish(item.id);
-      setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
-      onWebappPublishStateChange?.(item.id, result.state);
+      onWebappPublishStatusChange(item.id, result);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3723,8 +3703,7 @@ export function SettingsPage({
     setWebappPublishPendingId(item.id);
     try {
       const result = await window.electronAPI.webs.webapps.unpublish(item.id);
-      setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
-      onWebappPublishStateChange?.(item.id, result.state);
+      onWebappPublishStatusChange(item.id, result);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3778,8 +3757,7 @@ export function SettingsPage({
         }
       }
 
-      await refreshWebItemsFromSettings();
-      await refreshSelectedWebappStatus(selectedWebapp.id);
+      await onWebItemsRefresh();
       await refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3794,17 +3772,13 @@ export function SettingsPage({
     setWebappRuntimePendingId(pendingKey);
     try {
       const result = action === "refresh"
-        ? await window.electronAPI.webs.webapps.getStatus(item.id)
+        ? await onWebItemsRefresh()
         : action === "start"
           ? await window.electronAPI.webs.webapps.start(item.id)
           : action === "stop"
             ? await window.electronAPI.webs.webapps.stop(item.id)
             : await window.electronAPI.webs.webapps.restart(item.id);
-      setWebappRuntimeById((current) => ({
-        ...current,
-        [item.id]: result.state
-      }));
-      onWebappRuntimeStateChange?.(item.id, result.state, result.message);
+      if ("state" in result) onWebappRuntimeStateChange(item.id, result.state, result.message);
       await refreshSelectedWebappRuntimeCheck(item.id);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
@@ -3833,11 +3807,11 @@ export function SettingsPage({
       const result = await window.electronAPI.webs.webapps.uninstall(item.id);
       showSectionResultNotice("webapps", result);
       if (result.ok) {
-        onWebappRuntimeStateChange?.(item.id, null, result.message);
+        onWebappRuntimeStateChange(item.id, null, result.message);
         const nextItem = result.items.find((candidate) => candidate.id !== item.id) ?? result.items[0] ?? null;
         setSelectedWebappId(nextItem?.id ?? "");
         setWebappLogContent("");
-        await refreshWebItemsFromSettings();
+        await onWebItemsRefresh();
       }
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -4170,6 +4144,9 @@ export function SettingsPage({
     }
   }
 
+  const [runtimeResetStage, setRuntimeResetStage] = useState<import("../../../shared/contracts").DesktopRuntimeResetStage>("preparing");
+  useEffect(() => window.electronAPI.settings.onRuntimeResetProgress(setRuntimeResetStage), []);
+
   async function handleResetRuntimeEnv() {
     if (!window.confirm(t("settings.reset.confirmMessage"))) {
       return;
@@ -4461,13 +4438,13 @@ export function SettingsPage({
   }
 
   function getWebappPublishStatusLabel(state: WebappPublishState | null | undefined) {
-    return state?.active
-      ? t("settings.webapps.publishStatusPublished")
-      : t("settings.webapps.publishStatusNotPublished");
+    return t(getWebappPublishPresentation(state, webappPublishInfo,
+      state ? webappRuntimeById[state.id] : undefined).label);
   }
 
   function getWebappPublishStatusClass(state: WebappPublishState | null | undefined) {
-    return state?.active ? "running" : "idle";
+    return getWebappPublishPresentation(state, webappPublishInfo,
+      state ? webappRuntimeById[state.id] : undefined).className;
   }
 
   function renderWebDetailRow(label: string, value: ReactNode) {
@@ -4493,7 +4470,10 @@ export function SettingsPage({
             loading={usageProfileLoading}
             heatmapMode={usageHeatmapMode}
             onHeatmapModeChange={setUsageHeatmapMode}
-            onRefresh={refreshUsageProfile}
+            onRefresh={async () => {
+              await window.electronAPI.sso.retrySession();
+              await refreshUsageProfile();
+            }}
           />
         );
       case "general": {
@@ -4639,7 +4619,7 @@ export function SettingsPage({
                   }))}
                 />
               </div>
-              <SkinSettings />
+              <SkinSettings onOpenMarket={() => navigate("/market?tab=skins")} />
               <div className="settings-appearance-row">
                 <div className="settings-appearance-row-copy">
                   <strong>{t("settings.language.label")}</strong>
@@ -4749,6 +4729,7 @@ export function SettingsPage({
               <div className="settings-pet-gallery">
                 <div className="settings-appearance-row pet-gallery-heading">
                   <div className="settings-appearance-row-copy"><strong>{t("settings.desktopPet.appearance")}</strong></div>
+                <Button onClick={() => navigate("/market?tab=pets")}>{t("market.tab.pets.title")}</Button>
                 <PetImportControls
                   onImported={(state) => { setDesktopPetState(state); setReadErrorSections(["assistant"], ""); }}
                   onNotice={(message, tone) => showSectionNotice("assistant", message, tone)}
@@ -5291,7 +5272,7 @@ export function SettingsPage({
       case "webapps": {
         const runtimeState = selectedWebapp ? webappRuntimeById[selectedWebapp.id] : null;
         const runtimeCheck = selectedWebapp ? webappRuntimeCheckById[selectedWebapp.id] : null;
-        const publishInfo = selectedWebapp ? webappPublishInfoById[selectedWebapp.id] : null;
+        const publishInfo = webappPublishInfo;
         const publishState = selectedWebapp ? webappPublishStateById[selectedWebapp.id] : null;
         const publishReady = publishInfo?.configured === true;
         const publishHint = !publishInfo
@@ -5309,7 +5290,7 @@ export function SettingsPage({
           : publishState?.status === "publishing"
             ? t("settings.webapps.publishing")
             : publishState?.status === "published"
-              ? t("settings.webapps.publishVerified")
+              ? publishStatusLabel
               : publishState?.status === "unpublished"
                 ? t("settings.webapps.publishStopped")
               : publishHint;
@@ -5435,7 +5416,7 @@ export function SettingsPage({
                       </div>
                       <div className="service-title-actions service-primary-actions">
                         <SettingsActionButton
-                          icon={<CloudUploadOutlined />}
+                          icon="publish"
                           label={webappPublishPendingId === selectedWebapp.id
                             ? t("settings.webapps.publishing")
                             : publishState?.active
@@ -5448,21 +5429,21 @@ export function SettingsPage({
                         <SettingsActionButton
                           label={t("settings.webapps.start")}
                           tone="primary"
-                          icon={<PlayCircleOutlined />}
+                          icon="start"
                           disabled={webappRuntimePendingId !== "" || runtimeState?.status === "running" || runtimeState?.status === "starting"}
                           loading={webappRuntimePendingId === `start:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("start", selectedWebapp)}
                         />
                         <SettingsActionButton
                           label={t("settings.webapps.stop")}
-                          icon={<PauseCircleOutlined />}
+                          icon="stop"
                           disabled={webappRuntimePendingId !== "" || !runtimeState || runtimeState.status === "stopped"}
                           loading={webappRuntimePendingId === `stop:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("stop", selectedWebapp)}
                         />
                         <SettingsActionButton
                           label={t("settings.webapps.restart")}
-                          icon={<ReloadOutlined />}
+                          icon="restart"
                           disabled={webappRuntimePendingId !== "" || runtimeState?.status !== "running"}
                           loading={webappRuntimePendingId === `restart:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("restart", selectedWebapp)}
@@ -5470,14 +5451,14 @@ export function SettingsPage({
                         {selectedWebapp.removable !== false ? (
                           <SettingsActionButton
                             label={webappDeletingId === selectedWebapp.id ? t("settings.webapps.removing") : t("settings.webapps.remove")}
-                            icon={<DeleteOutlined />}
+                            icon="delete"
                             tone="danger"
                             disabled={webappDeletingId === selectedWebapp.id || webappPending}
                             loading={webappDeletingId === selectedWebapp.id}
                             onClick={() => void handleDeleteWebappItem(selectedWebapp)}
                           />
                         ) : null}
-                        <SettingsActionButton label={t("settings.webapps.detailsAction")} icon={<InfoCircleOutlined />} onClick={() => setWebappDetailsOpen(true)} />
+                        <SettingsActionButton label={t("settings.webapps.detailsAction")} icon="info" onClick={() => setWebappDetailsOpen(true)} />
                       </div>
                     </div>
                     {publishState?.active && publishState.url ? (
@@ -5630,7 +5611,8 @@ export function SettingsPage({
                                 </div>
                                 <Button
                                   disabled={webappPublishPendingId !== ""}
-                                  onClick={() => void refreshWebappPublishStatus(selectedWebapp.id)}
+                                  onClick={() => void onWebItemsRefresh().catch((reason) =>
+                                    showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error"))}
                                 >
                                   {t("settings.webapps.publishRefresh")}
                                 </Button>
@@ -5827,10 +5809,7 @@ export function SettingsPage({
                 </article>
               ) : (
                 <article className="service-card control-center-detail control-center-empty">
-                  <div className="loading-box control-center-empty webapp-import-empty">
-                    <strong>{t("settings.webapps.empty")}</strong>
-                    <span>{t("settings.webapps.importHint")}</span>
-                  </div>
+                  {t("settings.webapps.emptyDetail")}
                 </article>
               )}
             </div>
@@ -5857,6 +5836,7 @@ export function SettingsPage({
           <AboutAppCard
             isWindows={isWindows}
             runtimeResetPending={runtimeResetPending}
+            runtimeResetStage={runtimeResetStage}
             runtimeResetResult={runtimeResetResult}
             onResetRuntimeEnv={handleResetRuntimeEnv}
           />

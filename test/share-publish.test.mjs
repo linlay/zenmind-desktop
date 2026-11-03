@@ -71,7 +71,7 @@ test("public resolution omits credentials, strictly validates handoff, and never
 function facadeFixture(fetchImpl) {
   let status = { authenticated: true, pending: false, user: { issuer: "test", sub: "one" } };
   let ready = true;
-  let refreshCount = 0;
+  let tokenReads = 0;
   let identityReads = 0;
   const listeners = new Set();
   const identity = {
@@ -88,15 +88,15 @@ function facadeFixture(fetchImpl) {
     if (name.endsWith("main-i18n")) return { t: key => key };
     return localRequire(name);
   }, module, module.exports);
-  const facade = module.exports.createShareFacade({ app: {}, fetchImpl, refreshToken: async () => { refreshCount++; return target.accessToken; } });
-  return { facade, listeners, identityReads: () => identityReads, refreshCount: () => refreshCount, switchAccount: () => { status = { ...status, user: { issuer: "test", sub: "two" } }; }, revoke: () => { ready = false; for (const listener of listeners) listener(); } };
+  const facade = module.exports.createShareFacade({ app: {}, fetchImpl, readToken: () => { tokenReads++; return target.accessToken; } });
+  return { facade, listeners, identityReads: () => identityReads, tokenReads: () => tokenReads, switchAccount: () => { status = { ...status, user: { issuer: "test", sub: "two" } }; }, revoke: () => { ready = false; for (const listener of listeners) listener(); } };
 }
 
-test("public facade refreshes only a proven 401, never replays a lost create, and clears listeners", async () => {
+test("public facade reads the published token without renewing on 401, never replays a lost create, and clears listeners", async () => {
   let calls = 0;
   const fixture = facadeFixture(async () => ++calls === 1 ? json({}, 401) : json({ items: [record] }));
-  assert.equal((await fixture.facade.list()).ok, true);
-  assert.equal(calls, 2); assert.equal(fixture.refreshCount(), 2); assert.equal(fixture.listeners.size, 0);
+  assert.equal((await fixture.facade.list()).ok, false);
+  assert.equal(calls, 1); assert.equal(fixture.tokenReads(), 1); assert.equal(fixture.listeners.size, 0);
   let creates = 0;
   const lost = facadeFixture(async url => {
     if (url.endsWith("/limits")) return json({ maxManifestBytes: 4096, maxResourceBytes: 1024 });
@@ -142,7 +142,7 @@ test("receiver setup has no network or Identity work, and public handoff never r
   const unregister = fixture.facade.registerReceiver({ receiverId: "test.receiver", owner: { type: "builtin", id: "test" }, contextVersions: [7], activate: async () => ({ generation: "page-1", isCurrent: () => true, receive: async () => ({ status: "received" }) }) });
   assert.equal(calls, 0); assert.equal(fixture.identityReads(), 0);
   assert.equal((await fixture.facade.receive("abc")).status, "received");
-  assert.equal(calls, 2); assert.equal(fixture.refreshCount(), 0); assert.equal(fixture.identityReads(), 0); assert.equal(fixture.listeners.size, 0);
+  assert.equal(calls, 2); assert.equal(fixture.tokenReads(), 0); assert.equal(fixture.identityReads(), 0); assert.equal(fixture.listeners.size, 0);
   unregister(); fixture.facade.dispose();
 });
 

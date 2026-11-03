@@ -98,7 +98,7 @@ export function PetImportControls({ onImported, onNotice }: {
           if (captureFileDrag(event)) event.dataTransfer.dropEffect = busy.current ? "none" : "copy";
         }}
         onDrop={drop}>
-        <span role="status">{t(pending ? "settings.desktopPet.import.pending" : "settings.desktopPet.import.hint")}</span>
+        <span>{t("settings.desktopPet.import.hint")}</span>
       </div>
     </div>
   );

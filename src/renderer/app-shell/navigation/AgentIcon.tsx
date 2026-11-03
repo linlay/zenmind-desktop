@@ -33,8 +33,8 @@ function DefaultAgentAvatar({ name, color, className, size, interactive }: {
     data-agent-avatar="" data-agent-pointer-disabled={interactive ? undefined : "true"}
     data-agent-icon-name={name} className={[styles.avatar, className].filter(Boolean).join(" ")}
     style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0, color, fill: "currentColor" }}>
-    <ellipse data-agent-shadow="" className={styles.avatarShadow} cx="100" cy={name === "team" ? 172 : 162} rx="62" ry="14" fill="currentColor" />
-    <g data-agent-motion="" className={styles.avatarMotion}><AgentDefaultPose key={name} variant={variants[name]} /></g>
+    <ellipse data-agent-shadow="" className={styles.avatarShadow} cx="100" cy={name === "team" ? 172 : 162} rx="56" ry={name === "team" ? 6 : 9} fill="currentColor" />
+    <g data-agent-motion="" className={styles.avatarMotion}><g data-agent-spin="" className={styles.avatarMotion}><AgentDefaultPose key={name} variant={variants[name]} /></g></g>
   </svg>;
 }
 

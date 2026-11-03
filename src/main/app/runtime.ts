@@ -14,7 +14,7 @@ import { createDesktopAppearanceRuntime } from "../modules/settings";
 import { createArtifactRuntime, createArtifactPlatformClient } from "../modules/artifacts";
 import { createAssistantRunWakeLock, createFirstInstallBootstrapNavigation, getAssistantSettings, type AssistantBridgeRuntime } from "../modules/assistant";
 import { callAgentPlatform } from "../modules/desktop-actions";
-import { getDesktopDeviceId, getDesktopSsoAccessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, type DesktopSsoRestoreResult } from "../modules/identity";
+import { getDesktopDeviceId, getDesktopSsoBusinessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, subscribeDesktopSsoCredentialChange, type DesktopSsoRestoreResult } from "../modules/identity";
 import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller, registerMarketShareReceiver } from "../modules/marketplace";
 import { registerDesktopPetAssetProtocolScheme, type DesktopPetRuntime } from "../modules/pet";
 import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../modules/plugins";
@@ -37,8 +37,11 @@ import * as shell from "./assembly/shell";
 import * as webSurfaces from "./assembly/web-surfaces";
 import { createLocalDocumentEditingChat } from "./assembly/local-documents";
 import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
-import { consumeRuntimeEnvReset, prepareRuntimeEnvReset, armRuntimeEnvReset, cancelRuntimeEnvReset } from "../infrastructure/filesystem/runtime-env-reset-transaction";
+import { consumeRuntimeEnvReset, prepareRuntimeEnvReset, armRuntimeEnvReset, cancelRuntimeEnvReset, completeRuntimeEnvReset, getRuntimeEnvResetRecovery, requestRuntimeEnvRollback } from "../infrastructure/filesystem/runtime-env-reset-transaction";
+import { preparePlatformRuntimeRecovery } from "../modules/services";
+import { restrictDirectoryToCurrentUser } from "../modules/credentials";
 import { createRuntimeResetCoordinator } from "./lifecycle/runtime-reset";
+import { showRuntimeResetRecovery } from "./lifecycle/runtime-reset-recovery";
 import { initializeElectronProfile } from "./bootstrap/electron-profile";
 import * as appReady from "./lifecycle/app-ready";
 import * as runtimeEvents from "./lifecycle/runtime-events";
@@ -101,11 +104,10 @@ export function createMainProcessRuntime() {
   try {
     completedRuntimeReset = consumeRuntimeEnvReset(app, startupPlatform);
   } catch (error) {
-    dialog.showErrorBox(t("settings.reset.failed"), error instanceof Error ? error.message : String(error));
-    app.exit(1);
+    void showRuntimeResetRecovery(error, startupPlatform);
     return { start() {} };
   }
-  const isFirstDesktopInstall = completedRuntimeReset || !desktopDataRootExists(app, startupPlatform);
+  const isFirstDesktopInstall = !completedRuntimeReset && !desktopDataRootExists(app, startupPlatform);
   const runtimeRootAtProcessStart = resolveRuntimeRoot(app, startupPlatform);
   const runtimeRootExistedAtStartup = !completedRuntimeReset && runtimeRootExists(app, startupPlatform);
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);
@@ -189,7 +191,8 @@ export function createMainProcessRuntime() {
   app.once("will-quit", () => artifactRuntime?.dispose());
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
   const startupRestoreController = startupAssembly.assembleStartupRestore({
-    get getMainWindow() { return getMainWindow; }
+    get getMainWindow() { return getMainWindow; },
+    getRecoveryBackupPath: () => getRuntimeEnvResetRecovery(app, startupPlatform)?.backupPath
   });
   const servicesRuntime = createServicesRuntime({
     app,
@@ -272,10 +275,9 @@ export function createMainProcessRuntime() {
     get handleDesktopSsoWebviewNavigation() { return handleDesktopSsoWebviewNavigation; },
     get webviewContextMenuController() { return webviewContextMenuController; }
   });
-  let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
+  let maintainDesktopSsoSession = async () => getDesktopSsoBusinessToken() || "";
   const enterpriseChatRuntime = enterpriseChat.assembleEnterpriseChat({
     get startupPlatform() { return startupPlatform; },
-    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
     get showFileDialog() { return showFileDialog; },
     get showSaveDialog() { return showSaveDialog; },
     get captureEnterpriseChatScreenshot() { return captureEnterpriseChatScreenshot; },
@@ -309,9 +311,11 @@ export function createMainProcessRuntime() {
   let startupEnvImportFailureMessage: string | null = null;
   let nonCoreDesktopRuntimeStarted = false;
   let ssoCredentialDependentRuntimesStarted = false;
+  let ssoCredentialDependentIdentity: string | null = null;
   let desktopSsoRestoreState: DesktopSsoRestoreResult["state"] = "signed_out";
   let focusedWebviewDevToolsShortcutRegistered = false;
   function setStartupPhase(phase: StartupPhase) {
+    if (phase === "core-ready") completeRuntimeEnvReset(app, startupPlatform);
     return startupAssembly.setStartupPhase({
       get appState() { return appState; }
     }, phase);
@@ -404,22 +408,19 @@ export function createMainProcessRuntime() {
     get webSurfaceRuntime() { return webSurfaceRuntime; },
     get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; }
   });
-  identity.configureMarketTokenIssuer({
-    get desktopSsoController() { return desktopSsoController; }
-  });
-  refreshDesktopSsoIdentityToken = identity.createDesktopSsoTokenRefresher({
+  identity.configureMarketTokenIssuer();
+  subscribeDesktopSsoCredentialChange(() => identity.handleDesktopSsoCredentialChanged(ssoDispatcherDependencies()));
+  maintainDesktopSsoSession = identity.createDesktopSsoMaintenance({
     get desktopSsoController() { return desktopSsoController; },
     get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; },
-    get desktopSsoRestoreState() { return desktopSsoRestoreState; },
-    get assistantBridgeRuntime() { return assistantBridgeRuntime; },
-    get enterpriseChatRuntime() { return enterpriseChatRuntime; }
+    get desktopSsoRestoreState() { return desktopSsoRestoreState; }
   });
 
   websFacade.webappWindowManager.setAuthPreloadPath(MAIN_PRELOAD_PATH.replace(/index\.js$/u, "webapp-auth.js"));
   registerWebappAuth({
     registry: webSurfaceRuntime.browserSurfaceRegistry,
     webs: websFacade,
-    refreshToken: (force) => refreshDesktopSsoIdentityToken(force)
+    readToken: identity.readPublishedDesktopSsoToken
   });
 
   const settingsRuntime = settings.assembleSettingsRuntime({
@@ -447,7 +448,6 @@ export function createMainProcessRuntime() {
     get cdpIntegration() { return cdpIntegration; },
     get issueAgentAccessToken() { return identityTokenProvider; },
     get realtimeBroker() { return realtimeBroker; },
-    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
     get showMainWindow() { return showMainWindow; },
     get showFileDialog() { return showFileDialog; },
     get showSaveDialog() { return showSaveDialog; },
@@ -459,6 +459,7 @@ export function createMainProcessRuntime() {
     get websFacade() { return websFacade; }
   });
   const startupPipeline = startupAssembly.assembleStartupPipeline({
+    get reinstallBuiltinServices() { return completedRuntimeReset; },
     get desktopAppInfo() { return desktopAppInfo; },
     get isFirstDesktopInstall() { return isFirstDesktopInstall; },
     get startupEnvImportFailureMessage() { return startupEnvImportFailureMessage; },
@@ -477,11 +478,8 @@ export function createMainProcessRuntime() {
     get websFacade() { return websFacade; },
     get servicesFacade() { return servicesFacade; }
   });
-  const resetRuntimeEnv = createRuntimeResetCoordinator({
+  const resetLifecycle = {
     state: appState,
-    prepare: () => prepareRuntimeEnvReset(app, startupPlatform),
-    arm: (id) => armRuntimeEnvReset(app, startupPlatform, id),
-    cancel: (id) => cancelRuntimeEnvReset(app, startupPlatform, id),
     beginShutdown: () => {
       realtimeBroker.beginShutdown();
       pluginBridgeRuntime.emitBeforeQuit();
@@ -490,8 +488,40 @@ export function createMainProcessRuntime() {
     cleanup: runShutdownCleanup,
     flushLogs: () => logsRuntime.flush(500),
     relaunch: () => app.relaunch(),
-    quit: beginAppQuitWithoutConfirmation
+    quit: beginAppQuitWithoutConfirmation,
+    onProgress: (stage: import("../../shared/contracts").DesktopRuntimeResetStage) => {
+      const window = getMainWindow();
+      if (window && !window.isDestroyed()) window.webContents.send("settings.runtimeResetProgress", stage);
+    }
+  };
+  const reinstallRuntimeEnv = createRuntimeResetCoordinator({
+    ...resetLifecycle,
+    prepare: async () => {
+      const prepared = await prepareRuntimeEnvReset(app, startupPlatform,
+        directory => restrictDirectoryToCurrentUser(directory, startupPlatform));
+      try {
+        const restore = await preparePlatformRuntimeRecovery(app, prepared.transactionRoot,
+          resolveRuntimeRoot(app, startupPlatform), prepared.candidateRoot);
+        return { ...prepared, restore };
+      } catch (error) {
+        cancelRuntimeEnvReset(app, startupPlatform, prepared.id);
+        throw error;
+      }
+    },
+    arm: (id) => armRuntimeEnvReset(app, startupPlatform, id),
+    cancel: (id) => cancelRuntimeEnvReset(app, startupPlatform, id)
   });
+  const rollbackRuntimeEnv = createRuntimeResetCoordinator({
+    ...resetLifecycle,
+    prepare: async () => {
+      const recovery = getRuntimeEnvResetRecovery(app, startupPlatform);
+      if (!recovery) throw new Error("No runtime reset is available for rollback.");
+      return { id: "rollback", result: recovery };
+    },
+    arm: () => requestRuntimeEnvRollback(app, startupPlatform),
+    cancel: () => {}
+  });
+
 
 
   async function handleDesktopSsoWebviewNavigation(url: string) {
@@ -729,24 +759,31 @@ export function createMainProcessRuntime() {
     });
   }
 
-  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) {
-    return identity.applyDesktopSsoRestoreResult({
+  // A function declaration keeps the dispatcher callable from hoisted wiring before this line runs.
+  function ssoDispatcherDependencies(): Parameters<typeof identity.applyDesktopSsoRestoreResult>[0] {
+    return {
       get desktopSsoRestoreState() { return desktopSsoRestoreState; },
       set desktopSsoRestoreState(value) { desktopSsoRestoreState = value; },
       get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; },
       set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
+      get ssoCredentialDependentIdentity() { return ssoCredentialDependentIdentity; },
+      set ssoCredentialDependentIdentity(value) { ssoCredentialDependentIdentity = value; },
       get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
       get startSsoCredentialDependentRuntimes() { return startSsoCredentialDependentRuntimes; },
       get assistantBridgeRuntime() { return assistantBridgeRuntime; },
       get enterpriseChatRuntime() { return enterpriseChatRuntime; }
-    }, result);
+    };
+  }
+
+  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) {
+    return identity.applyDesktopSsoRestoreResult(ssoDispatcherDependencies(), result);
   }
 
   function startNonCoreDesktopRuntime() {
     return startupAssembly.startNonCoreDesktopRuntime({
       get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; },
       set nonCoreDesktopRuntimeStarted(value) { nonCoreDesktopRuntimeStarted = value; },
-      get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
+      get maintainDesktopSsoSession() { return maintainDesktopSsoSession; },
       get runNonCoreStartupTask() { return runNonCoreStartupTask; },
       get petRuntime() { return petRuntime; },
       get startupPlatform() { return startupPlatform; },
@@ -815,7 +852,7 @@ export function createMainProcessRuntime() {
       get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },
       get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
       get startupPipeline() { return startupPipeline; },
-      refreshDesktopSsoIdentityToken: (force) => refreshDesktopSsoIdentityToken(force),
+      readDesktopSsoShareToken: () => identity.readPublishedDesktopSsoToken(),
       registerIpc: (sharesFacade, conversationShareFacade, getUpdatesRuntime) => {
         sharedLinks = sharesFacade;
         pluginBridgeRuntime.configureShareReceivers(sharesFacade, id => servicesRuntime.runServiceMutation(() => servicesRuntime.handleServiceStart(id)));
@@ -836,11 +873,10 @@ export function createMainProcessRuntime() {
         }
         return readyIpc.registerReadyIpc({
         artifactRuntime,
-        get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; },
         beginLocalDocumentDraftPromotion: input => localDocuments.beginDraftChatPromotion(input),
         cancelLocalDocumentDraftPromotion: input => { localDocuments.cancelDraftChatPromotion(input); },
         promoteLocalDocumentDraft: input => localDocuments.promoteDraftChat(input),
-        resetRuntimeEnv: () => servicesRuntime.runServiceMutation(resetRuntimeEnv),
+        resetRuntimeEnv: (action) => servicesRuntime.runServiceMutation(action === "rollback" ? rollbackRuntimeEnv : reinstallRuntimeEnv),
         get setStartupPhase() { return setStartupPhase; },
         get startupRestoreController() { return startupRestoreController; },
         get startupPlatform() { return startupPlatform; },

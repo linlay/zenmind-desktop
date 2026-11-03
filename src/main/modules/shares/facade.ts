@@ -7,7 +7,7 @@ import { ShareHttpError, type ShareTarget } from "./http-transport";
 import { resolveShareOrigin } from "./target";
 import { createShareReceiverRouter } from "./receiver";
 
-export function createShareFacade(options: { app: App; refreshToken: (force?: boolean) => Promise<string>; fetchImpl?: typeof fetch }) {
+export function createShareFacade(options: { app: App; readToken: () => string; fetchImpl?: typeof fetch }) {
   const client = new ShareHttpClient(options.fetchImpl);
   const resolve = (id: string, signal?: AbortSignal) => {
     const origin = resolveShareOrigin(options.app);
@@ -22,7 +22,7 @@ export function createShareFacade(options: { app: App; refreshToken: (force?: bo
     const controller = new AbortController();
     const unsubscribe = subscribeDesktopSsoCredentialRevocation(() => controller.abort());
     try {
-      let token = await options.refreshToken();
+      const token = options.readToken();
       const status = getDesktopSsoStatus(options.app);
       const identity = JSON.stringify([status.user?.issuer, status.user?.sub]);
       if (!status.authenticated || !isDesktopSsoCredentialRuntimeReady() || !status.user?.sub || !token ||
@@ -36,16 +36,8 @@ export function createShareFacade(options: { app: App; refreshToken: (force?: bo
       };
       const result = await run(async (request) => {
         validate();
-        let response;
-        try { response = await request({ origin: origin.origin, accessToken: token, signal: controller.signal }); }
-        catch (error) {
-          validate();
-          if (!(error instanceof ShareHttpError) || error.status !== 401) throw error;
-          token = await options.refreshToken(true);
-          validate();
-          if (!token) throw new Error(t("assistant.chatShareUnauthorized"));
-          response = await request({ origin: origin.origin, accessToken: token, signal: controller.signal });
-        }
+        // Identity owns renewal. A share API rejection stays local to this request.
+        const response = await request({ origin: origin.origin, accessToken: token, signal: controller.signal });
         validate();
         return response;
       });

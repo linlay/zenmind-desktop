@@ -489,8 +489,19 @@ export interface AssistantConversationShareRequest {
 
 export type AssistantConversationShareRecord = import("./shares").ShareRecord;
 
+export type ConversationShareOmissionReason =
+  | "not_found" | "forbidden" | "unsupported" | "too_large"
+  | "timeout" | "changed" | "invalid" | "read_failed";
+
+export type ConversationShareOmittedResource = {
+  id?: string;
+  sourceRef?: string;
+  name: string;
+  reason: ConversationShareOmissionReason;
+};
+
 export type AssistantConversationShareCreateResult =
-  | { ok: true; message: string; record: AssistantConversationShareRecord; warning?: string }
+  | { ok: true; message: string; record: AssistantConversationShareRecord; omittedResources: ConversationShareOmittedResource[] }
   | { ok: false; message: string };
 
 export type AssistantConversationShareListResult =
@@ -559,7 +570,7 @@ export interface AssistantPastedImageInput {
   data: ArrayBuffer;
 }
 
-export type AssistantAccessLevel = "default" | "auto_approve" | "full_access";
+export type AssistantAccessLevel = "default" | "ask_for_approval" | "auto_approve" | "full_access";
 
 export interface AssistantStartRunRequest {
   references?: {type: "skill" | "kbase" | "chat"; id: string}[];

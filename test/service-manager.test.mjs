@@ -109,7 +109,7 @@ const {
 const { updateDesktopProfileInRoot } = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
 const {
   getDesktopConfigRoot,
-  getDesktopSsoAccessTokenFilePath
+  getDesktopSsoIdTokenFilePath
 } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
@@ -240,6 +240,7 @@ function createCoreDesktopManifest(serviceId, assetFileName) {
   if (serviceId === "agent-platform") {
     return {
       ...desktop,
+      ssoIdTokenFile: "v1",
       capabilities: {
         provides: [],
         requires: []
@@ -2645,7 +2646,7 @@ test("agent-platform deploy command only appends Desktop required args", async (
       "--state-dir",
       "--log-dir",
       "--port",
-      "--identity-file",
+      "--sso-id-token-file",
       "--daemon",
       "--ai-vision-general-model-key",
       "--ai-vision-ocr-model-key",
@@ -2668,12 +2669,15 @@ test("agent-platform deploy command only appends Desktop required args", async (
     assert.notEqual(identityCenterPublicKeyPath, publicKeyPath);
 
     const startCommand = __testInternals.appendDesktopManagedLayoutFlags(app, service, ["start.sh"], layout, "start");
+    assert.throws(() => __testInternals.appendDesktopManagedLayoutFlags(
+      app, { ...service, desktop: { ...service.desktop, ssoIdTokenFile: undefined } }, ["start.sh"], layout, "start"
+    ), /SSO ID-token file contract v1/);
     assertFlag(startCommand, "--config-dir", layout.configDir);
     assert.equal(startCommand.includes("--runtime-dir"), false);
     assertFlag(startCommand, "--state-dir", layout.stateDir);
     assertFlag(startCommand, "--log-dir", layout.logDir);
     assertFlag(startCommand, "--port", String(fixture.ports.platform));
-    assertFlag(startCommand, "--identity-file", getDesktopSsoAccessTokenFilePath(app));
+    assertFlag(startCommand, "--sso-id-token-file", getDesktopSsoIdTokenFilePath(app));
     const stopCommand = __testInternals.appendDesktopManagedLayoutFlags(app, service, ["stop.sh"], layout, "stop");
     assert.deepEqual(stopCommand, ["stop.sh", "--state-dir", layout.stateDir]);
   } finally {
@@ -8178,6 +8182,29 @@ test("Node preparation failure prevents every core start and is reported for ret
     assert.match(result.failures.join("\n"), /Desktop Node\/npm: npm fixture unavailable/);
     for (const id of ["identity-center", "agent-platform", "agent-webclient"]) {
       assert.notEqual((await getServiceState(app, id)).status, "running");
+    }
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runtime reinstall replaces healthy core programs and keeps optional programs", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
+  try {
+    const ids = ["agent-container-hub", "identity-center", "agent-platform", "agent-webclient"];
+    for (const id of ids) {
+      await installBuiltinService(app, id);
+      fs.writeFileSync(path.join(getTestServiceProgramDir(userDataRoot, id, getBuiltinService(id).version), "local-program-marker"), "old program");
+    }
+    const result = await runStartupPreparation(app, { reinstallBuiltinServices: true, desktopVersion: "v1.0.0", isFirstDesktopInstall: false,
+      applyDesktopConfiguration: () => assert.fail("same-version recovery must preserve Desktop settings") });
+    assert.deepEqual(result.failures, []);
+    for (const id of ids) {
+      assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, id, getBuiltinService(id).version), "local-program-marker")), id === "agent-container-hub");
     }
   } finally {
     await stopStartupCoreProcesses(app);

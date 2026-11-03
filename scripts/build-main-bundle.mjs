@@ -67,7 +67,9 @@ export async function buildMainBundle(rootDir = projectRoot) {
     legalComments: "none",
     define: {
       __DESKTOP_APP_BRAND__: JSON.stringify(runtimeBrandPayload(activeBrand)),
-      __DESKTOP_UPDATE_TRUST__: JSON.stringify(updateTrust)
+      __DESKTOP_UPDATE_TRUST__: JSON.stringify(updateTrust),
+      "process.env.WS_NO_BUFFER_UTIL": "true",
+      "process.env.WS_NO_UTF_8_VALIDATE": "true"
     },
     external: getExternalModules(),
     loader: {

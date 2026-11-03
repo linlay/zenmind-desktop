@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
 const { executeWebappToolingInWorker } = require("../dist-electron/main/modules/webs/webapps/tooling/worker.js");
 const {
-  sanitizeAgentRealtimeDebugValue
+  serializeAgentRealtimeDebugValue
 } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-debug-trace.js");
 
 test("Desktop Main TypeScript is the only authoritative WebApp Tooling implementation", () => {
@@ -38,15 +38,15 @@ test("Desktop Main TypeScript is the only authoritative WebApp Tooling implement
   assert.equal(/env\.DESKTOP_ROOT\b/u.test(serviceManagerSource), false);
 });
 
-test("trusted Workspace roots are redacted from realtime diagnostics", () => {
+test("local debug traces preserve macOS and Windows Workspace paths", () => {
   assert.deepEqual(
-    sanitizeAgentRealtimeDebugValue({
+    serializeAgentRealtimeDebugValue({
       source: { runId: "run-1", workspaceRoot: "/private/workspaces/run-1" },
       nested: { workspace_root: "C:\\private\\workspaces\\run-1" }
     }),
     {
-      source: { runId: "run-1", workspaceRoot: "<REDACTED>" },
-      nested: { workspace_root: "<REDACTED>" }
+      source: { runId: "run-1", workspaceRoot: "/private/workspaces/run-1" },
+      nested: { workspace_root: "C:\\private\\workspaces\\run-1" }
     }
   );
 });

@@ -106,3 +106,26 @@ export function resolveSkinPackageTokens(tokens: SkinPackageManifest["variants"]
 export function skinPackageResources(manifest: SkinPackageManifest): string[] {
   return [...new Set([manifest.preview, ...Object.values(manifest.variants).flatMap(variant => [variant.background?.path, ...Object.values(variant.visuals?.images ?? {})])].filter((path): path is string => Boolean(path)))];
 }
+
+// Archive-only compatibility for the exact slots discarded by parseSkinVisuals.
+// These references never become a runtime skin resource or renderer data.
+export function discardedSkinPackageResources(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const variants = (value as Record<string, unknown>).variants;
+  if (!variants || typeof variants !== "object" || Array.isArray(variants)) return [];
+  const result = new Set<string>();
+  for (const mode of ["light", "dark"]) {
+    const variant = (variants as Record<string, unknown>)[mode];
+    if (!variant || typeof variant !== "object" || Array.isArray(variant)) continue;
+    const visuals = (variant as Record<string, unknown>).visuals;
+    if (!visuals || typeof visuals !== "object" || Array.isArray(visuals)) continue;
+    const images = (visuals as Record<string, unknown>).images;
+    if (!images || typeof images !== "object" || Array.isArray(images)) continue;
+    for (const [slot, raw] of Object.entries(images)) {
+      if (slot !== "chat.screenshot" && !slot.startsWith("agent.")) continue;
+      try { const path = validateSkinResourcePath(raw); if (/\.png$/i.test(path)) result.add(path); }
+      catch { /* Invalid ignored fields cannot authorize any archive entry. */ }
+    }
+  }
+  return [...result];
+}

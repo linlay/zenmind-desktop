@@ -13,7 +13,8 @@ const {
   configureTunnelHubRegistrationController,
   deriveTunnelHubRegistrationApiOrigin,
   ensureTunnelHubRegistrationReady,
-  updateTunnelPlatformCredential
+  updateTunnelPlatformCredential,
+  __testInternals
 } = require("../dist-electron/main/modules/tunnel/registration.js");
 const {
   readTunnelHubSettings,
@@ -47,7 +48,7 @@ function desktopRoot(homePath) {
 function writeDesktopSsoAccessToken(homePath, token = "canonical-desktop-jwt") {
   const stateRoot = path.join(desktopRoot(homePath), "state", "desktop");
   fs.mkdirSync(stateRoot, { recursive: true });
-  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), `${token}\n`, "utf8");
+  fs.writeFileSync(path.join(stateRoot, "sso-id-token.txt"), `${token}\n`, "utf8");
 }
 
 function listen(server) {
@@ -199,60 +200,46 @@ test("Tunnel Hub registration reuses the canonical Desktop SSO token", async (t)
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-token")), false);
 });
 
-test("Tunnel Hub registration refreshes the Desktop JWT once after a 401", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-refresh-"));
-  const homePath = path.join(root, "home");
-  const app = createApp(homePath);
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+for (const status of [401, 403]) {
+  test(`Tunnel Hub registration ${status} fails locally with the Hub reason and never renews Desktop sign-in`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-rejected-"));
+    const homePath = path.join(root, "home");
+    const app = createApp(homePath);
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  writeDesktopSsoAccessToken(homePath, "stale-desktop-jwt");
-  const saved = saveTunnelHubSettings(app, {
-    enabled: true,
-    relayUrl: "wss://relay.example.test/tunnel",
-    deviceId: "mac-mini-office"
-  });
-  assert.equal(saved.ok, true);
+    writeDesktopSsoAccessToken(homePath, "desktop-jwt");
+    assert.equal(saveTunnelHubSettings(app, {
+      enabled: true,
+      relayUrl: "wss://relay.example.test/tunnel",
+      deviceId: "mac-mini-office"
+    }).ok, true);
 
-  const authorizations = [];
-  let refreshCalls = 0;
-  configureTunnelHubRegistrationController({
-    fetch: async (_url, init) => {
-      authorizations.push(init.headers.Authorization);
-      if (init.headers.Authorization === "Bearer stale-desktop-jwt") {
+    const authorizations = [];
+    const leakedJwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJlbXBsb3llZSJ9.c2lnbmF0dXJlLXZhbHVl";
+    configureTunnelHubRegistrationController({
+      fetch: async (_url, init) => {
+        authorizations.push(init.headers.Authorization);
         return {
           ok: false,
-          status: 401,
+          status,
           statusText: "Unauthorized",
-          text: async () => "unauthorized"
+          text: async () => JSON.stringify({ error: { code: "jwt_signature_invalid", message: `bad ${leakedJwt}` } })
         };
-      }
-      return {
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        text: async () => JSON.stringify({
-          accountId: "account", deviceId: "mac-mini-office",
-          relayUrl: "wss://relay.example.test/tunnel"
-        })
-      };
-    },
-    refreshIdentityToken: async () => {
-      refreshCalls += 1;
-      writeDesktopSsoAccessToken(homePath, "fresh-desktop-jwt");
-      return "fresh-desktop-jwt";
-    },
-    logger: { log() {}, warn() {}, error() {} }
-  });
+      },
+      logger: { log() {}, warn() {}, error() {} }
+    });
 
-  const result = await ensureTunnelHubRegistrationReady(app);
-  assert.equal(result.registered, true);
-  assert.equal(result.identityToken, "fresh-desktop-jwt");
-  assert.equal(refreshCalls, 1);
-  assert.deepEqual(authorizations, [
-    "Bearer stale-desktop-jwt",
-    "Bearer fresh-desktop-jwt"
-  ]);
-});
+    await assert.rejects(ensureTunnelHubRegistrationReady(app), (error) => {
+      assert.equal(error.name, "TunnelHubCredentialRejectedError");
+      assert.equal(error.status, status);
+      assert.equal(error.reason, "jwt_signature_invalid");
+      assert.match(error.message, new RegExp(`\\(${status}\\): jwt_signature_invalid$`, "u"));
+      return true;
+    });
+    assert.deepEqual(authorizations, ["Bearer desktop-jwt"]);
+    assert.equal(__testInternals.readRegistrationRejectionReason(JSON.stringify({ message: `bad ${leakedJwt}` })), "bad [redacted]");
+  });
+}
 
 test("Tunnel Hub registration ignores legacy registration token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-canonical-token-"));

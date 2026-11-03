@@ -28,7 +28,10 @@ export interface SessionControllerDependencies {
   setEnabled(enabled: boolean): Promise<EnterpriseChatSnapshot>;
   updateServerUrl(): void;
   exchangeSession(identityToken: string): Promise<ServerSession>;
-  readonly refreshIdentityToken?: (() => Promise<string | null>) | undefined;
+  /** Canonical token the IM server rejected; only a different committed token retries it. */
+  rejectedIdentityToken: string;
+  /** Advanced by sign-out, stop and each refresh so late responses cannot restore an old session. */
+  sessionEpoch: number;
   imSessionToken: string;
   imSessionTokenExpiresAt: number;
   scheduleSessionRefresh(): void;
@@ -52,6 +55,9 @@ export interface SessionControllerDependencies {
 
 export async function setEnabled(dependencies: SessionControllerDependencies, enabled: boolean) {
   if (!enabled || !dependencies.serverUrl) {
+    dependencies.sessionEpoch += 1;
+    dependencies.refreshPromise = null;
+    dependencies.rejectedIdentityToken = "";
     dependencies.disconnect();
     dependencies.clearSession();
     dependencies.updateSnapshot({
@@ -68,26 +74,44 @@ export async function setEnabled(dependencies: SessionControllerDependencies, en
     });
     return dependencies.getState();
   }
-  const wasEnabled = dependencies.snapshot.enabled;
+  // Re-enabling a live connection (startup fan-out, config reload) must keep its displayed state.
+  if (dependencies.snapshot.enabled && dependencies.socket) {
+    return dependencies.getState();
+  }
   dependencies.updateSnapshot({
     enabled: true,
     connectionState: dependencies.getIdentityToken() ? "connecting" : "signed_out",
     message: ""
   });
-  if (!wasEnabled || !dependencies.socket) {
-    return dependencies.refresh();
-  }
-  return dependencies.getState();
+  return dependencies.refresh();
 }
 
 export async function refresh(dependencies: SessionControllerDependencies) {
   if (dependencies.refreshPromise) {
     return dependencies.refreshPromise;
   }
-  dependencies.refreshPromise = dependencies.performRefresh().finally(() => {
-    dependencies.refreshPromise = null;
+  const pending = dependencies.performRefresh().finally(() => {
+    if (dependencies.refreshPromise === pending) dependencies.refreshPromise = null;
   });
-  return dependencies.refreshPromise;
+  dependencies.refreshPromise = pending;
+  return pending;
+}
+
+/** Desktop committed a new canonical token; reconnect only if IM is parked on a missing or rejected one. */
+export function handleCredentialChanged(dependencies: SessionControllerDependencies) {
+  if (!dependencies.snapshot.enabled || dependencies.refreshPromise) {
+    return;
+  }
+  const identityToken = readText(dependencies.getIdentityToken());
+  if (!identityToken) {
+    return;
+  }
+  const parked = dependencies.rejectedIdentityToken
+    ? dependencies.rejectedIdentityToken !== identityToken
+    : dependencies.snapshot.connectionState === "signed_out";
+  if (parked) {
+    void dependencies.refresh();
+  }
 }
 
 export async function reloadConfiguration(dependencies: SessionControllerDependencies, enabled: boolean) {
@@ -105,6 +129,8 @@ export async function performRefresh(dependencies: SessionControllerDependencies
   if (!dependencies.snapshot.enabled) {
     return dependencies.getState();
   }
+  const epoch = ++dependencies.sessionEpoch;
+  const current = () => epoch === dependencies.sessionEpoch && dependencies.snapshot.enabled;
   const identityToken = readText(dependencies.getIdentityToken());
   if (!identityToken) {
     dependencies.disconnect();
@@ -136,15 +162,16 @@ export async function performRefresh(dependencies: SessionControllerDependencies
       session = await dependencies.exchangeSession(identityToken);
     }
     catch (error) {
-      if (!(error instanceof EnterpriseChatRequestError) || error.status !== 401 || !dependencies.refreshIdentityToken) {
-        throw error;
+      // An IM rejection never renews or revokes Desktop sign-in; wait for Desktop's next token.
+      if (current() && error instanceof EnterpriseChatRequestError && (error.status === 401 || error.status === 403)) {
+        dependencies.rejectedIdentityToken = identityToken;
       }
-      const refreshedIdentityToken = readText(await dependencies.refreshIdentityToken());
-      if (!refreshedIdentityToken) {
-        throw error;
-      }
-      session = await dependencies.exchangeSession(refreshedIdentityToken);
+      throw error;
     }
+    if (!current()) {
+      return dependencies.getState();
+    }
+    dependencies.rejectedIdentityToken = "";
     dependencies.imSessionToken = session.token;
     dependencies.imSessionTokenExpiresAt = session.expiresAt;
     dependencies.scheduleSessionRefresh();
@@ -152,6 +179,9 @@ export async function performRefresh(dependencies: SessionControllerDependencies
       dependencies.requestBootstrap(),
       dependencies.requestUsers()
     ]);
+    if (!current()) {
+      return dependencies.getState();
+    }
     const bootstrapCurrentUser = bootstrap.user.id ? bootstrap.user : session.user;
     const directoryCurrentUser = users.find((user) => user.id === bootstrapCurrentUser.id);
     const currentUser = directoryCurrentUser
@@ -180,6 +210,14 @@ export async function performRefresh(dependencies: SessionControllerDependencies
     await dependencies.connectWebSocket();
   }
   catch (error) {
+    if (!current()) {
+      return dependencies.getState();
+    }
+    if (dependencies.rejectedIdentityToken && readText(dependencies.getIdentityToken()) !== dependencies.rejectedIdentityToken) {
+      // Desktop committed another token while this exchange was in flight; its wake-up was
+      // skipped because this refresh was still running, so retry once after it settles.
+      setTimeout(() => handleCredentialChanged(dependencies), 0);
+    }
     dependencies.disconnect();
     dependencies.clearSession();
     dependencies.updateSnapshot({
@@ -202,6 +240,9 @@ export function updateServerUrl(dependencies: SessionControllerDependencies) {
 }
 
 export function handleSignedOut(dependencies: SessionControllerDependencies) {
+  dependencies.sessionEpoch += 1;
+  dependencies.refreshPromise = null;
+  dependencies.rejectedIdentityToken = "";
   dependencies.disconnect();
   dependencies.clearSession();
   dependencies.updateSnapshot({
@@ -218,6 +259,8 @@ export function handleSignedOut(dependencies: SessionControllerDependencies) {
 }
 
 export function stop(dependencies: SessionControllerDependencies) {
+  dependencies.sessionEpoch += 1;
+  dependencies.refreshPromise = null;
   dependencies.disconnect();
   dependencies.clearSession();
 }

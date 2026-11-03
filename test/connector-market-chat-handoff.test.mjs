@@ -12,7 +12,7 @@ const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKi
   target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 
 function setup(extraProps = {}, previousDetail = null) {
-  const navigated = [], captured = {};
+  const navigated = [], chatNavigated = [], captured = {};
   let stateIndex = 0;
   const runtime = { getConnectorId: () => "wecom-cli-connector", getConnection: () => null, isInstalled: () => false, flow: null, busy: false, error: "" };
   const module = { exports: {} };
@@ -43,27 +43,28 @@ function setup(extraProps = {}, previousDetail = null) {
       return new Proxy({}, { get: (_, key) => key === "__esModule" ? false : key === "default" ? symbol : String(key) });
     } });
   const tree = module.exports.ConnectorMarketplace({ items: [], loading: false, feedback: null,
-    onTabChange() {}, onManage() {}, ...extraProps });
+    onTabChange() {}, onManage() {}, onRequestAgentChatNavigate: route => chatNavigated.push(route), ...extraProps });
   function find(node, type) {
     if (!node || typeof node !== "object") return undefined;
     if (Array.isArray(node)) return node.map(child => find(child, type)).find(Boolean);
     if (node.type === type) return node;
     return find(node.props?.children, type);
   }
-  return { navigated, onChat: captured.onChat, detail: find(tree, "ConnectorDetailDialog") };
+  return { navigated, chatNavigated, onChat: captured.onChat, detail: find(tree, "ConnectorDetailDialog") };
 }
 
 test("all market connector Chat actions explicitly replace the new Chat Composer intent", () => {
-  const { navigated, onChat } = setup();
+  const { navigated, chatNavigated, onChat } = setup();
   for (const draft of [undefined, "我想使用「企业微信」查询 A & B？"]) {
     onChat("cutej", draft);
-    const route = new URL(navigated.at(-1), "http://desktop.invalid");
+    const route = new URL(chatNavigated.at(-1), "http://desktop.invalid");
     assert.equal(route.pathname, "/agent/cutej");
     assert.match(route.searchParams.get("newChat"), /^[1-9]\d{12}$/u);
     assert.equal(route.searchParams.has("composerDraft"), true);
     assert.equal(route.searchParams.get("composerDraft"), draft ?? "");
     assert.equal(route.searchParams.has("composerSkill"), false);
   }
+  assert.deepEqual(navigated, [], "Chat navigation must use the shell's focus handoff rather than the bare router");
 });
 
 test("a new share target never exposes the previous detail while page effects are pending", () => {

@@ -7,7 +7,7 @@ import type {
 import type { TranslateFunction, TranslationKey } from "@shared/i18n";
 import type { MarketShareTarget } from "../../../shared/market-share";
 
-export type MarketTab = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "mcps" | "websiteApps" | "softwarePackages";
+export type MarketTab = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "skins" | "cli" | "mcps" | "websiteApps" | "softwarePackages";
 export type SkillScope = "all" | "cloud" | "local";
 
 export interface MarketTabDefinition {
@@ -20,6 +20,7 @@ export interface MarketTabDefinition {
 export interface MarketViewProps {
   activeTab: MarketTab;
   onTabChange: (tab: MarketTab) => void;
+  onRequestAgentChatNavigate: (targetPath: string) => void;
   initialItemId?: string;
   shareTarget?: MarketShareTarget | null;
   onDismissSharedItem?: () => void;
@@ -28,7 +29,11 @@ export interface MarketViewProps {
 
 export const DEFAULT_MARKET_TAB: MarketTab = "skills";
 
-const VISIBLE_MARKET_TABS: readonly MarketTab[] = ["skills", "mcps", "websiteApps"];
+const VISIBLE_MARKET_TABS: readonly MarketTab[] = ["skills", "mcps", "websiteApps", "pets", "skins"];
+
+export function parseMarketTab(value: unknown): MarketTab {
+  return typeof value === "string" && VISIBLE_MARKET_TABS.includes(value as MarketTab) ? value as MarketTab : DEFAULT_MARKET_TAB;
+}
 
 const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: TranslationKey; subtitle: TranslationKey }> = {
   plugins: {
@@ -51,6 +56,7 @@ const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: Transla
     title: "market.tab.sandboxImages.title",
     subtitle: "market.tab.sandboxImages.subtitle"
   },
+  skins: {label:"market.tab.skins.label",title:"market.tab.skins.title",subtitle:"market.tab.skins.subtitle"},
   pets: {
     label: "market.tab.pets.label",
     title: "market.tab.pets.title",
@@ -84,6 +90,7 @@ export const MARKET_TAB_ITEM_TYPES: Record<MarketTab, MarketItemType> = {
   agents: "agent",
   sandboxImages: "sandbox-image",
   pets: "pet",
+  skins: "skin",
   cli: "cli",
   mcps: "connector",
   websiteApps: "website-app",

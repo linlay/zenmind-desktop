@@ -313,6 +313,19 @@ function getEditableAddressInputValue(value: string) {
   return value === BLANK_EXTERNAL_WEBVIEW_URL ? "" : value;
 }
 
+function releaseExternalWebviewFocus(webview: Electron.WebviewTag, isWindows: boolean, isMac: boolean) {
+  if (isWindows) {
+    // Hiding a guest can clear DOM focus before Windows releases its native
+    // keyboard focus. Release this guest even if activeElement already changed.
+    webview.blur();
+  } else if (isMac) {
+    // Keep macOS on its DOM focus path and leave another surface's focus alone.
+    if (webview.ownerDocument.activeElement === webview) webview.blur();
+  } else if (webview.ownerDocument.activeElement === webview) {
+    webview.blur();
+  }
+}
+
 function ExternalWebviewPane({
   tab,
   active,
@@ -335,6 +348,24 @@ function ExternalWebviewPane({
   const initialSrcRef = useRef(tab.currentUrl);
   const [loadFailed, setLoadFailed] = useState(false);
   const previewVersionRef = useRef(documentPreviewVersion);
+  const isWindows = navigator.userAgent.includes("Windows");
+  const isMac = navigator.userAgent.includes("Macintosh") || navigator.userAgent.includes("Mac OS X");
+
+  useLayoutEffect(() => {
+    const webview = webviewRef.current;
+    if (webview && (!active || !surfaceActive)) {
+      releaseExternalWebviewFocus(webview, isWindows, isMac);
+    }
+  }, [active, surfaceActive, isWindows, isMac]);
+
+  useLayoutEffect(() => {
+    // Capture the actual guest while mounted: React may clear its ref before
+    // cleanup when a tab, Website or WebApp is removed.
+    const webview = webviewRef.current;
+    return () => {
+      if (webview) releaseExternalWebviewFocus(webview, isWindows, isMac);
+    };
+  }, [isWindows, isMac]);
 
   useEffect(() => {
     if (!documentPreview || documentPreviewVersion === undefined) return;

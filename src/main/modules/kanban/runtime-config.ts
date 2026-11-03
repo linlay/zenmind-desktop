@@ -7,7 +7,7 @@ import type {
   KanbanSettingsInput
 } from "../../../shared/contracts";
 import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-import { getDesktopDeviceInfo, readDesktopSsoAccessToken, readDesktopSsoAccessTokenUser } from "../identity";
+import { getDesktopDeviceInfo, readDesktopSsoIdToken, readDesktopSsoIdTokenUser } from "../identity";
 import { isRecord, readBoolean, readText } from "./protocol-values";
 import {
   type KanbanDesktopConnectionState,
@@ -86,8 +86,8 @@ export function resolveKanbanWsConnection(
   if (!canUseDesktopSsoCredentials) {
     return { config: null, fallbackState: "auth_required" };
   }
-  const token = readDesktopSsoAccessToken(app);
-  if (!token || !readDesktopSsoAccessTokenUser(app)) {
+  const token = readDesktopSsoIdToken(app);
+  if (!token || !readDesktopSsoIdTokenUser(app)) {
     return { config: null, fallbackState: "auth_required" };
   }
   return {

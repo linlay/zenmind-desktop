@@ -18,8 +18,7 @@ export type MainIpcRegistrationOptions = {
   beginLocalDocumentDraftPromotion(input: { ownerWebContentsId: number; agentKey: string; newChat: string; chatId: string }): boolean;
   cancelLocalDocumentDraftPromotion(input: { ownerWebContentsId: number; agentKey: string; newChat: string; chatId: string }): void;
   promoteLocalDocumentDraft(input: { ownerWebContentsId: number; agentKey: string; newChat: string; chatId: string }): boolean;
-  resetRuntimeEnv: () => Promise<import("../infrastructure/filesystem/runtime-env-contracts").RuntimeEnvResetResult & { restartScheduled: true }>;
-  refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
+  resetRuntimeEnv: (action?: "reinstall" | "rollback") => Promise<import("../infrastructure/filesystem/runtime-env-contracts").RuntimeEnvResetResult & { restartScheduled: true }>;
   appearanceRuntime: AppearanceRuntime;
   app: App;
   issueAgentAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<any>;
@@ -39,6 +38,7 @@ export type MainIpcRegistrationOptions = {
   setCopilotDevToolsTarget: (target: CopilotDevToolsTarget | null) => void;
   getWebContentsById: (id: number) => WebContents | undefined;
   setWorkPanelFullscreenActive: (active: boolean) => void;
+  setMainWindowSidebarCollapsed: (collapsed: boolean) => void;
   assistantBridgeRuntime: AssistantBridgeRuntime;
   assistantRunWakeLock: AssistantRunWakeLock;
   logsRuntime: LogsRuntime;

@@ -63,7 +63,10 @@ for (const platform of ["darwin", "win32"]) {
     const { applyDesktopSsoRestoreResult } = loadUnit("assembly/identity", {
       electron: { app: {} },
       "../../modules/agent-platform": new Proxy({}, { get: (_target, name) => assert.fail(`SSO must not call agent-platform.${String(name)}`) }),
-      "../../modules/identity": { isDesktopSsoCredentialRuntimeReady: () => true },
+      "../../modules/identity": {
+        isDesktopSsoCredentialRuntimeReady: () => true,
+        getDesktopSsoStatus: () => ({ authenticated: true, user: { issuer: "https://login.example.test", sub: "employee-1", audience: "desktop" } })
+      },
       "../../modules/services": { stopBrowserWebclient: async () => events.push("stop-browser") },
       "../../modules/marketplace": { refreshMarketCatalog: async () => {} },
       "../../support/logging/safe-console": { safeConsoleError: () => events.push("error") }
@@ -71,9 +74,10 @@ for (const platform of ["darwin", "win32"]) {
     const dependencies = {
       desktopSsoRestoreState: "authenticated",
       ssoCredentialDependentRuntimesStarted: true,
+      ssoCredentialDependentIdentity: null,
       nonCoreDesktopRuntimeStarted: false,
       startSsoCredentialDependentRuntimes: () => { dependencies.ssoCredentialDependentRuntimesStarted = true; },
-      enterpriseChatRuntime: { refresh: async () => {} },
+      enterpriseChatRuntime: { refresh: async () => {}, handleSignedOut: () => events.push("im-signed-out") },
       get servicesRuntime() { assert.fail("SSO must not queue Provider mutations"); },
       get servicesFacade() { assert.fail("SSO must not stop Platform/WebClient"); },
       get startupPipeline() { assert.fail("SSO must not rerun service startup"); },
@@ -83,7 +87,84 @@ for (const platform of ["darwin", "win32"]) {
     assert.equal(dependencies.desktopSsoRestoreState, "signed_out");
     applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
     assert.equal(dependencies.desktopSsoRestoreState, "authenticated");
-    assert.deepEqual(events, ["stop-browser"]);
+    assert.deepEqual(events, ["stop-browser", "im-signed-out"]);
+  });
+
+  test(`${platform}: identity dispatcher rebuilds downstream services only when the account changes`, async () => {
+    const events = [];
+    let user = { issuer: "https://login.example.test", sub: "employee-1", audience: "desktop" };
+    let ready = true;
+    const { applyDesktopSsoRestoreResult, handleDesktopSsoCredentialChanged } = loadUnit("assembly/identity", {
+      electron: { app: {} },
+      "../../modules/identity": {
+        isDesktopSsoCredentialRuntimeReady: () => ready,
+        getDesktopSsoStatus: () => ({ authenticated: Boolean(user), user })
+      },
+      "../../modules/services": { stopBrowserWebclient: async () => events.push("stop-browser") },
+      "../../modules/marketplace": { refreshMarketCatalog: async () => { events.push("market-refresh"); } },
+      "../../modules/tunnel": {
+        stopTunnelHubRuntime: async () => { events.push("tunnel-stop"); },
+        notifyTunnelHubCredentialChanged: () => events.push("tunnel-credential")
+      },
+      "../../support/logging/safe-console": { safeConsoleError: (...args) => assert.fail(String(args)) }
+    });
+    const dependencies = {
+      desktopSsoRestoreState: "signed_out",
+      ssoCredentialDependentRuntimesStarted: false,
+      ssoCredentialDependentIdentity: null,
+      nonCoreDesktopRuntimeStarted: true,
+      startSsoCredentialDependentRuntimes: () => {
+        dependencies.ssoCredentialDependentRuntimesStarted = true;
+        events.push("start-tunnel-and-im");
+      },
+      assistantBridgeRuntime: {
+        refreshKanbanDeviceInfo: () => events.push("kanban-reconnect"),
+        refreshKanbanCredentials: () => events.push("kanban-credentials")
+      },
+      enterpriseChatRuntime: {
+        refresh: async () => { events.push("im-rebuild"); },
+        handleSignedOut: () => events.push("im-signed-out"),
+        handleCredentialChanged: () => events.push("im-credential")
+      }
+    };
+    const take = () => events.splice(0);
+
+    applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
+    assert.deepEqual(take(), ["start-tunnel-and-im", "kanban-reconnect", "market-refresh", "im-rebuild"]);
+
+    // Same-account renewals publish authenticated again; nothing restarts.
+    applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
+    handleDesktopSsoCredentialChanged(dependencies);
+    assert.deepEqual(take(), ["kanban-credentials", "tunnel-credential", "im-credential"]);
+
+    // A temporary outage pauses Tunnel; same-account recovery only resumes it.
+    applyDesktopSsoRestoreResult(dependencies, { state: "temporarily_unavailable" });
+    assert.deepEqual(take(), ["stop-browser", "tunnel-stop"]);
+    applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
+    assert.deepEqual(take(), ["start-tunnel-and-im"]);
+
+    // An account change without an intervening sign-out still rebuilds everything once.
+    user = { ...user, sub: "employee-2" };
+    handleDesktopSsoCredentialChanged(dependencies);
+    assert.deepEqual(take(), ["start-tunnel-and-im", "kanban-reconnect", "market-refresh", "im-rebuild"]);
+
+    // Background revocation clears IM like an explicit sign-out; the next login rebuilds.
+    applyDesktopSsoRestoreResult(dependencies, { state: "signed_out" });
+    assert.deepEqual(take(), ["stop-browser", "tunnel-stop", "im-signed-out"]);
+    applyDesktopSsoRestoreResult(dependencies, { state: "authenticated" });
+    assert.deepEqual(take(), ["start-tunnel-and-im", "kanban-reconnect", "market-refresh", "im-rebuild"]);
+
+    // A token committed mid-login is ignored until the credential runtime is ready.
+    ready = false;
+    handleDesktopSsoCredentialChanged(dependencies);
+    assert.deepEqual(take(), []);
+
+    // An unverified disk candidate loaded before startup restore publishes nothing downstream.
+    ready = true;
+    applyDesktopSsoRestoreResult(dependencies, { state: "signed_out" });
+    take();
+    handleDesktopSsoCredentialChanged(dependencies);
+    assert.deepEqual(take(), []);
   });
 }
 

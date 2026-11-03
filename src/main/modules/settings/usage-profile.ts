@@ -18,7 +18,7 @@ import {
   type AgentPlatformUsageProviderCandidate
 } from "../agent-platform";
 import { readTransitHubSettings } from "./transit-hub-settings";
-import { getDesktopSsoAccessToken } from "../identity";
+import { getDesktopSsoBusinessToken } from "../identity";
 import { t } from "../../support/i18n/main-i18n";
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -27,10 +27,10 @@ export type DesktopUsageProfileOptions = {
   fetchImpl?: FetchLike;
   now?: Date;
   platform?: NodeJS.Platform;
-  getAccessToken?: (force: boolean) => Promise<string>;
-  peekAccessToken?: () => string;
-  /** Internal retry guard: one SSO refresh for the whole profile query. */
-  tokenRefreshAttempted?: boolean;
+  /** Published canonical token. A Transit Hub 401 never renews or revokes Desktop sign-in. */
+  readAccessToken?: () => string;
+  /** Internal retry guard: one rerun when Identity committed a newer token during the query. */
+  tokenRetryAttempted?: boolean;
 };
 
 class UsageProfileFetchError extends Error {
@@ -332,8 +332,7 @@ export async function getDesktopUsageProfile(
   try {
     const settings = readTransitHubSettings(app, options.platform);
     if (!settings?.enabled) return failureResult("not-configured", t("settings.usage.errors.notConfigured"), fetchedAt);
-    const getToken = options.getAccessToken ?? (async () => getDesktopSsoAccessToken() || "");
-    const peekToken = options.peekAccessToken ?? (() => getDesktopSsoAccessToken() || "");
+    const readToken = options.readAccessToken ?? (() => getDesktopSsoBusinessToken() || "");
     const candidate = settings.auth.mode === "apikey"
       ? readAgentPlatformUsageProvider(app, settings.auth.providerKey, options.platform)
       : { providerKey: "", providerName: "Transit Hub", baseURL: settings.baseUrl, model: "", sourcePath: "", apiKey: "" };
@@ -342,31 +341,30 @@ export async function getDesktopUsageProfile(
     }
     configurationReady = true;
     candidate.baseURL = settings.baseUrl;
-    if (settings.auth.mode === "access-token") candidate.apiKey = await getToken(false);
+    if (settings.auth.mode === "access-token") candidate.apiKey = readToken();
     if (!candidate.apiKey) return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
-    async function refreshAndRetry(): Promise<DesktopUsageProfileResult> {
-      if (options.tokenRefreshAttempted || peekToken() !== candidate.apiKey) {
+    // Rerun once only with a token Identity already committed (its own renewal or a new account),
+    // so stale results are never shown and a rejected token never drives Desktop renewal.
+    async function retryWithCommittedToken(): Promise<DesktopUsageProfileResult> {
+      const current = readToken();
+      if (options.tokenRetryAttempted || !current || current === candidate.apiKey) {
         return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
       }
-      const refreshed = await getToken(true);
-      if (!refreshed) return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
-      return getDesktopUsageProfile(app, { ...options, tokenRefreshAttempted: true });
+      return getDesktopUsageProfile(app, { ...options, tokenRetryAttempted: true });
     }
     let currentKey;
     try {
       currentKey = normalizeCurrentKey(await fetchUsageJson(fetchImpl, candidate, "/api/me"));
     } catch (error) {
-      if (settings.auth.mode === "access-token" && error instanceof UsageProfileFetchError && error.status === 401) return await refreshAndRetry();
+      if (settings.auth.mode === "access-token" && error instanceof UsageProfileFetchError && error.status === 401) return await retryWithCommittedToken();
       throw error;
     }
     const from = new Date(now);
     from.setUTCDate(from.getUTCDate() - 364);
     from.setUTCHours(0, 0, 0, 0);
     const unavailableSections: Array<"limits" | "usage" | "balance" | "logs" | "sessions" | "prices"> = [];
-    let unauthorizedSection = false;
     async function section<T>(name: typeof unavailableSections[number], read: () => Promise<T>): Promise<T | null> {
-      try { return await read(); } catch (error) {
-        if (error instanceof UsageProfileFetchError && error.status === 401) unauthorizedSection = true;
+      try { return await read(); } catch {
         unavailableSections.push(name);
         return null;
       }
@@ -379,9 +377,9 @@ export async function getDesktopUsageProfile(
       section("sessions", () => fetchUsageJson(fetchImpl, candidate, "/api/me/sessions", { include_stale: "true", limit: "500" }).then((v) => normalizeListResult(v, normalizeSession))),
       section("prices", () => fetchUsageJson(fetchImpl, candidate, "/api/me/prices").then(normalizePrices))
     ]);
-    if (settings.auth.mode === "access-token" && unauthorizedSection && !options.tokenRefreshAttempted) return await refreshAndRetry();
-    if (settings.auth.mode === "access-token" && peekToken() !== candidate.apiKey) {
-      return failureResult("unauthorized", t("settings.usage.errors.unauthorized"), fetchedAt);
+    // With an unchanged token, a section-only 401 stays a partial result listed as unavailable.
+    if (settings.auth.mode === "access-token" && readToken() !== candidate.apiKey) {
+      return await retryWithCommittedToken();
     }
     // Reimporting configuration while a query is running invalidates its results too.
     if (JSON.stringify(readTransitHubSettings(app, options.platform)) !== JSON.stringify(settings)) {

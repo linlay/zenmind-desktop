@@ -7,6 +7,7 @@ import {
   beginAuthenticatedSession,
   completeUserInfoStep,
   completeAccessTokenStep,
+  publishRestoredDesktopSsoSession,
   finalizeDesktopSsoLoginAttempt
 } from "./sso-session";
 import type { DesktopSsoStatus } from "../../../shared/contracts";
@@ -77,12 +78,12 @@ export function completeDesktopSsoBrowserSession(app: App): DesktopSsoStatus {
   if (!configResult.configured) {
     return createUnconfiguredStatus(configResult.message);
   }
-  if (configResult.error || !configResult.config?.browserSession) {
+  if (configResult.error || !configResult.config || (!configResult.config.browserSession && !configResult.config.tokenExchange)) {
     return createFailedStatus(configResult.error || t("sso.config.browserSessionMissing"));
   }
   const claimsConfig = configResult.config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG;
   return beginAuthenticatedSession(app, {
-    issuer: configResult.config.browserOrigin || new URL(configResult.config.browserSession.url).origin,
+    issuer: configResult.config.browserOrigin || new URL(configResult.config.tokenExchange?.url || configResult.config.browserSession!.url).origin,
     audience: claimsConfig.audience,
     authMode: "browser-cookie"
   });
@@ -96,7 +97,7 @@ export function completeDesktopSsoBrowserSessionUserInfo(
   if (!configResult.configured) {
     return createUnconfiguredStatus(configResult.message);
   }
-  if (configResult.error || !configResult.config?.browserSession) {
+  if (configResult.error || !configResult.config || (!configResult.config.browserSession && !configResult.config.tokenExchange)) {
     return createFailedStatus(configResult.error || t("sso.config.browserSessionMissing"));
   }
   const sub = normalizeStringClaim(userInfo.sub);
@@ -109,7 +110,7 @@ export function completeDesktopSsoBrowserSessionUserInfo(
   const claimsConfig = configResult.config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG;
   return completeUserInfoStep(app, {
     sub,
-    issuer: configResult.config.browserOrigin || new URL(configResult.config.browserSession.url).origin,
+    issuer: configResult.config.browserOrigin || new URL(configResult.config.tokenExchange?.url || configResult.config.browserSession!.url).origin,
     audience: claimsConfig.audience,
     ...(name ? { name } : {}),
     ...(email ? { email } : {}),
@@ -205,7 +206,7 @@ export function buildDesktopSsoAccessTokenCookieDetails(
   }));
 }
 
-export function getDesktopSsoAccessTokenCookieDetails(app: Pick<App, "getPath">, accessToken: string) {
+export function getDesktopSsoBusinessTokenCookieDetails(app: Pick<App, "getPath">, accessToken: string) {
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured || configResult.error || !configResult.config) {
     return [];
@@ -213,11 +214,11 @@ export function getDesktopSsoAccessTokenCookieDetails(app: Pick<App, "getPath">,
   return buildDesktopSsoAccessTokenCookieDetails(accessToken, configResult.config);
 }
 
-export function getDesktopSsoAccessTokenCookieLookup(app: Pick<App, "getPath">) {
-  return getDesktopSsoAccessTokenCookieLookups(app)[0] || null;
+export function getDesktopSsoBusinessTokenCookieLookup(app: Pick<App, "getPath">) {
+  return getDesktopSsoBusinessTokenCookieLookups(app)[0] || null;
 }
 
-export function getDesktopSsoAccessTokenCookieLookups(app: Pick<App, "getPath">) {
+export function getDesktopSsoBusinessTokenCookieLookups(app: Pick<App, "getPath">) {
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured || configResult.error || !configResult.config) {
     return [];
@@ -259,7 +260,9 @@ export async function exchangeConfiguredDesktopSsoCookieForAccessToken(
   if (!configResult.configured || configResult.error || !configResult.config) {
     return "";
   }
+  const generation = desktopSsoRuntimeState.credentialGeneration;
   const accessToken = await exchangeCookieForAccessToken(cookieHeader, fetchImpl, configResult.config);
+  if (generation !== desktopSsoRuntimeState.credentialGeneration) return "";
   if (accessToken && options.persist !== false) {
     persistDesktopSsoAccessToken(app, accessToken);
   }
@@ -273,7 +276,8 @@ export function persistDesktopSsoAccessToken(app: Pick<App, "getPath">, accessTo
 export function completeDesktopSsoRestoredBrowserSession(
   app: App,
   accessToken: string,
-  browserUserInfo: { sub: string; name?: string; email?: string; avatarUrl?: string }
+  browserUserInfo: { sub: string; name?: string; email?: string; avatarUrl?: string },
+  options: { interactive?: boolean } = {}
 ) {
   const configResult = loadDesktopSsoConfig(app);
   if (!configResult.configured) {
@@ -287,17 +291,38 @@ export function completeDesktopSsoRestoredBrowserSession(
     return createFailedStatus(t("sso.cookieAccessTokenEmpty"));
   }
 
-  completeDesktopSsoBrowserSession(app);
+  if (!configResult.config.browserSession && !configResult.config.tokenExchange) {
+    return createFailedStatus(t("sso.config.browserSessionMissing"));
+  }
   if (!browserUserInfo.sub.trim()) {
     throw new Error(t("sso.token.cookieUserInfoSubMissing", { path: "sub" }));
   }
-  completeDesktopSsoBrowserSessionUserInfo(app, browserUserInfo);
-  persistDesktopSsoAccessToken(app, token);
-  return finalizeDesktopSsoLoginAttempt();
+  if (options.interactive) {
+    completeDesktopSsoBrowserSession(app);
+    completeDesktopSsoBrowserSessionUserInfo(app, browserUserInfo);
+    persistDesktopSsoAccessToken(app, token);
+    return finalizeDesktopSsoLoginAttempt();
+  }
+  const metadata = {
+    issuer: configResult.config.browserOrigin || new URL(configResult.config.tokenExchange?.url || configResult.config.browserSession!.url).origin,
+    audience: (configResult.config.claims || DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG).audience,
+    authMode: "browser-cookie" as const
+  };
+  const name = normalizeStringClaim(browserUserInfo.name);
+  const email = normalizeStringClaim(browserUserInfo.email);
+  const avatarUrl = normalizeStringClaim(browserUserInfo.avatarUrl);
+  return publishRestoredDesktopSsoSession(app, {
+    sub: browserUserInfo.sub.trim(),
+    issuer: metadata.issuer,
+    audience: metadata.audience,
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(avatarUrl ? { avatarUrl } : {})
+  }, token, metadata);
 }
 
-export function getDesktopSsoAccessToken() {
-  return desktopSsoRuntimeState.currentAccessToken || null;
+export function getDesktopSsoBusinessToken() {
+  return desktopSsoRuntimeState.currentBusinessToken || null;
 }
 
 export function isDesktopSsoCredentialRuntimeReady() {
@@ -305,7 +330,7 @@ export function isDesktopSsoCredentialRuntimeReady() {
     !desktopSsoRuntimeState.currentStatus.pending &&
     desktopSsoRuntimeState.currentStatus.completedSteps.session &&
     desktopSsoRuntimeState.currentStatus.completedSteps.accessToken &&
-    Boolean(desktopSsoRuntimeState.currentAccessToken);
+    Boolean(desktopSsoRuntimeState.currentBusinessToken);
 }
 
 export function completeDesktopSsoBrowserLogin(app: App, completionUrl: string): DesktopSsoStatus {

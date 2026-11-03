@@ -6,9 +6,14 @@ export const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
 
 export const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
 
-// Electron 42 on macOS 26 uses a 60 DIP native button group. Center it in the
-// 66 DIP collapsed sidebar so the zoom button stays inside the navigation rail.
-export const MAC_TRAFFIC_LIGHT_POSITION = { x: 3, y: 13 };
+// Safe native fallback: the unmodified 60 DIP group fits the 66 DIP sidebar.
+export const MAC_TRAFFIC_LIGHT_POSITION = { x: 3, y: 15 };
+
+// Keep native button sizes; center the compact group in the collapsed sidebar.
+export const MAC_TRAFFIC_LIGHT_LAYOUT = { gap: 5, centerX: 33 };
+// Widen only the two gaps; shifting the group center by 4 keeps the red button
+// at the same left edge for any native button sizes.
+export const MAC_TRAFFIC_LIGHT_EXPANDED_LAYOUT = { gap: 9, centerX: 37 };
 
 export const WINDOWS_BACKGROUND_LIGHT = "#FFFFFF";
 

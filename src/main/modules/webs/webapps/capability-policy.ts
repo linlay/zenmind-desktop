@@ -14,7 +14,7 @@ export function getWebappAllowedActions(item: WebappEntry, scope: WebappCapabili
   }
   for (const [capability, capabilityActions] of Object.entries(WEBAPP_BRIDGE_CAPABILITY_ACTIONS)) {
     if (capability === "desktop.share.receive" && !item.shareReceiver) continue;
-    if (scope === "backendActionToken" && capability !== "connector.execute" && capability !== "assistant.chat" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
+    if (scope === "backendActionToken" && capability !== "connector.execute" && capability !== "assistant.chat" && capability !== "assistant.execute" && capability !== "skill.read" && capability !== "artifact.read" && capability !== "kanban.read") {
       continue;
     }
     for (const action of capabilityActions) {

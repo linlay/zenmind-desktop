@@ -1,0 +1,3 @@
+export const HTML_MAX_BYTES = 32 * 1024 * 1024;
+export const HTML_ASSET_MAX_BYTES = 12 * 1024 * 1024;
+export const HTML_PREVIEW_TOTAL_MAX_BYTES = 64 * 1024 * 1024;

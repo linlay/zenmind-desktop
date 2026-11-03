@@ -32,6 +32,8 @@ const {
 const { createWebsFacade } = require("../dist-electron/main/modules/webs/index.js");
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/modules/plugins/loader.js");
 const { getSkillInstallDir, getSkillsCenterDir, installSkillFromPath, listInstalledSkills, uninstallSkill } = require("../dist-electron/main/modules/marketplace/skill-installer.js");
+const { createPetPackageService } = require("../dist-electron/main/modules/pet/package-service.js");
+const { createCanvas } = require("@napi-rs/canvas");
 const { readDesktopPetStoredState } = require("../dist-electron/main/modules/pet/desktop-pet.js");
 const { readWebappItems: readWebappItemsRaw } = require("../dist-electron/main/modules/webs/webapps/store.js");
 const { configureAgentMarketPlatformCaller } = require("../dist-electron/main/modules/marketplace/agent-market.js");
@@ -298,21 +300,21 @@ async function writePetArchive(root, options = {}) {
   const archivePath = path.join(root, `${petId}.zip`);
   const zip = new JSZip();
   const states = {
-    idle: { path: "idle.webp", frameCount: 4, durationMs: 6000, loop: true },
-    jumping: { path: "jumping.webp", frameCount: 4, durationMs: 1000, loop: false },
+    idle: { path: "idle.png", frameCount: 4, durationMs: 6000, loop: true },
+    jumping: { path: "jumping.png", frameCount: 4, durationMs: 1000, loop: false },
     "moving-left": {
-      path: "moving-left.webp",
+      path: "moving-left.png",
       frameCount: 8,
       durationMs: 900,
       loop: true,
       mirror: true
     },
-    dragging: { path: "dragging.webp", frameCount: 4, durationMs: 900, loop: true },
-    done: { path: "done.webp", frameCount: 6, durationMs: 1200, loop: false, holdMs: 2500 },
-    failed: { path: "failed.webp", frameCount: 4, durationMs: 1000, loop: false, holdMs: 3000 },
-    running: { path: "running.webp", frameCount: 8, durationMs: 1600, loop: true },
-    awaiting: { path: "awaiting.webp", frameCount: 4, durationMs: 1200, loop: true },
-    review: { path: "review.webp", frameCount: 4, durationMs: 1400, loop: true }
+    dragging: { path: "dragging.png", frameCount: 4, durationMs: 900, loop: true },
+    done: { path: "done.png", frameCount: 6, durationMs: 1200, loop: false, holdMs: 2500 },
+    failed: { path: "failed.png", frameCount: 4, durationMs: 1000, loop: false, holdMs: 3000 },
+    running: { path: "running.png", frameCount: 8, durationMs: 1600, loop: true },
+    awaiting: { path: "awaiting.png", frameCount: 4, durationMs: 1200, loop: true },
+    review: { path: "review.png", frameCount: 4, durationMs: 1400, loop: true }
   };
   zip.file(
     `${petId}/pet.json`,
@@ -321,22 +323,23 @@ async function writePetArchive(root, options = {}) {
       displayName: options.displayName ?? "Cloud Pet",
       version: options.version ?? "1.0.0",
       description: "Cloud desktop pet",
-      preview: "idle.webp",
+      preview: "idle.png",
       states
     }, null, 2)}\n`,
   );
   for (const asset of [
-    "idle.webp",
-    "jumping.webp",
-    "moving-left.webp",
-    "dragging.webp",
-    "done.webp",
-    "failed.webp",
-    "running.webp",
-    "awaiting.webp",
-    "review.webp"
+    "idle.png",
+    "jumping.png",
+    "moving-left.png",
+    "dragging.png",
+    "done.png",
+    "failed.png",
+    "running.png",
+    "awaiting.png",
+    "review.png"
   ]) {
-    zip.file(`${petId}/${asset}`, "fake webp");
+    const state = Object.values(states).find(state => state.path === asset);
+    zip.file(`${petId}/${asset}`, createCanvas(state.frameCount * 4, 4).toBuffer("image/png"));
   }
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
@@ -2689,6 +2692,7 @@ test("installMarketItem installs pet packages into desktop pet data", async (t) 
     ["/desk-cat.zip", archiveBytes]
   ]), async (baseUrl) => {
     const result = await installMarketItem(app, "desk-cat", {
+      petPackages: createPetPackageService({ app, platform: "darwin", refreshState: () => readDesktopPetStoredState(app) }),
       catalog: {
         schemaVersion: 1,
         items: [{
@@ -2712,7 +2716,7 @@ test("installMarketItem installs pet packages into desktop pet data", async (t) 
     assert.equal(result.ok, true);
     assert.equal(result.type, "pet");
     assert.equal(fs.existsSync(path.join(getDesktopPetsDataRoot(app), "desk-cat", "pet.json")), true);
-    assert.equal(readDesktopPetStoredState(app).appearanceId, "user:desk-cat");
+    assert.equal(readDesktopPetStoredState(app).appearanceId, "classic");
   });
 });
 

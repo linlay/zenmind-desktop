@@ -9,6 +9,7 @@ import { BrowserWindow, dialog, shell } from "electron";
 import { type DesktopActionBridgeOptions, type DesktopActionInvocationContext } from "./action-contracts";
 import { configureIsolatedAuthGuest, registerIsolatedAuthGuest } from "../../infrastructure/electron/isolated-auth-guest";
 import { readEmbeddedAuthorization } from "../agent-platform";
+import { selectWebappAssistantAgent } from "./webapp-assistant-agent";
 
 const actions = new Set(["connector.list", "connector.describe", "connector.invoke", "desktop.authenticateConnector", "desktop.requestAccess", "artifact.list", "artifact.get", "artifact.read", "artifact.open", "artifact.saveAs", "skill.list", "skill.describe"]);
 export const isWebappConnectorAction = (action: string) => actions.has(action);
@@ -23,6 +24,24 @@ export function rememberWebappChat(key: string, chatId: string) {
   if (chats.size >= 1024) chats.delete(chats.values().next().value!);
   chats.add(chatId);
 }
+
+// Reserve the bounded identity bucket before an execution can create a Chat.
+export function prepareWebappChat(key: string) {
+  if (!applicationChats.has(key)) {
+    if (applicationChats.size >= 1024) throw new ConnectorError("app_capacity_exceeded");
+    applicationChats.set(key, new Set());
+  }
+  chatReservations.set(key, (chatReservations.get(key) ?? 0) + 1);
+  return () => {
+    const count = (chatReservations.get(key) ?? 1) - 1;
+    if (count) chatReservations.set(key, count);
+    else {
+      chatReservations.delete(key);
+      if (!applicationChats.get(key)?.size) applicationChats.delete(key);
+    }
+  };
+}
+const chatReservations = new Map<string, number>();
 
 async function wait(ms: number, signal: AbortSignal) {
   if (signal.aborted) return;
@@ -190,13 +209,23 @@ async function executeWebappRead(options: DesktopActionBridgeOptions, action: st
   if (action.startsWith("skill.")) {
     const allowed = action === "skill.list" ? [] : ["skillId"];
     if (Object.keys(args).some(key => !allowed.includes(key))) throw new ConnectorError("invalid_arguments");
-    const agentKey = item.copilot?.agentKey;
-    if (!agentKey) throw new ConnectorError("assistant_agent_unavailable");
-    const raw = await request(identity.baseUrl, identity.token, `/api/skills?agentKey=${encodeURIComponent(agentKey)}`, "GET");
+    if (action === "skill.describe" && (typeof args.skillId !== "string" || !args.skillId.trim() || args.skillId.length > 256)) throw new ConnectorError("invalid_arguments");
+    const agentKey = await selectWebappAssistantAgent(options, item);
+    const raw = await request(identity.baseUrl, identity.token, `/api/skills?agentKey=${encodeURIComponent(agentKey)}`, "GET", undefined, false, signal).catch(async error => {
+      // Revocation can abort fetch before the success-path context check runs.
+      await context.check();
+      throw error;
+    });
     const items = (Array.isArray(raw) ? raw : raw?.skills);
     if (!Array.isArray(items)) throw new ConnectorError("invalid_platform_response");
-    const skills = items.filter(value => (item.copilot?.references ?? []).some(reference => reference.type === "skill" && reference.id === value.id)).map(value => ({ skillId: value.id, name: value.displayName || value.name || value.id, description: value.description, agentHasSkill: value.configured === true }));
-    if ((await platform(options)).subject !== identity.subject) throw new ConnectorError("app_grant_required");
+    // Installation grants metadata discovery. Copilot references constrain chat
+    // attachments, not the readable skill catalog or the selected Agent's flags.
+    const skills = items.map(value => {
+      if (typeof value?.id !== "string" || !value.id || (value.description !== undefined && typeof value.description !== "string")) throw new ConnectorError("invalid_platform_response");
+      return { skillId: value.id, name: typeof value.displayName === "string" && value.displayName || typeof value.name === "string" && value.name || value.id,
+        ...(typeof value.description === "string" ? { description: value.description } : {}), agentHasSkill: value.configured === true };
+    });
+    await context.check();
     const result = action === "skill.list" ? { items: skills } : skills.find(value => value.skillId === args.skillId);
     if (!result) throw new ConnectorError("skill_not_found");
     return { ok: true, action, result };

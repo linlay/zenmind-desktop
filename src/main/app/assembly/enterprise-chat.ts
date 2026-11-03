@@ -24,7 +24,6 @@ import {
 import { t } from "../../support/i18n/main-i18n";
 export interface AssembleEnterpriseChatDependencies {
   readonly startupPlatform: NodeJS.Platform;
-  readonly refreshDesktopSsoIdentityToken: (force?: boolean) => Promise<string>;
   readonly showFileDialog: AppShellRuntime["showFileDialog"];
   readonly showSaveDialog: AppShellRuntime["showSaveDialog"];
   readonly captureEnterpriseChatScreenshot: (mode: EnterpriseChatScreenshotMode) => ReturnType<typeof captureScreenshotForBridge>;
@@ -40,7 +39,6 @@ export function assembleEnterpriseChat(dependencies: AssembleEnterpriseChatDepen
     platform: dependencies.startupPlatform,
     getServerUrl: () => readEnterpriseImSettings(app, dependencies.startupPlatform).baseUrl,
     initialEnabled: readEnterpriseImSettings(app, dependencies.startupPlatform).enabled,
-    refreshIdentityToken: () => dependencies.refreshDesktopSsoIdentityToken(true),
     selectFiles: async () => {
       const result = await dependencies.showFileDialog({
         title: t("enterpriseChat.selectFiles"),

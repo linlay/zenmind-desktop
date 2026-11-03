@@ -394,3 +394,45 @@ test("native image reveal validates ownership and originals on macOS and Windows
     } finally { registry.dispose(); fs.rmSync(homePath, { recursive: true, force: true }); }
   }
 });
+
+test("native image download saves a copy and validates ownership", async () => {
+  const homePath = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-image-download-"));
+  const root = path.join(resolveRuntimeRootPath({ homePath, platform: process.platform }), "chats", "chat-download", "artifacts");
+  fs.mkdirSync(root, { recursive: true });
+  const imagePath = path.join(root, "photo.png");
+  fs.writeFileSync(imagePath, PNG_1X1);
+  const target = path.join(homePath, "copy.png");
+  const dialogs = [];
+  let dialogResult = { canceled: false, filePath: target };
+  const registry = new WorkPanelResourceImageRegistry();
+  configureRegistry(registry, homePath, {
+    showSaveDialog: async (options) => { dialogs.push(options); return dialogResult; },
+    fetchRemoteResource: async () => ({ bytes: PNG_1X1, mimeType: "image/png" }),
+  });
+  const webContents = sender();
+  try {
+    const source = { ownerChatId: "chat-download", rendererWebContentsId: webContents.id, profile: "artifact", agentKey: "agent", chatId: "chat-download", resourceId: "image", relativePath: "artifacts/photo.png" };
+    const prepared = await registry.prepareClaim(source);
+    const claimed = await registry.claim({ claimId: prepared.claimId, ownerChatId: source.ownerChatId, rendererGeneration: "generation" }, webContents);
+    const request = { ownerChatId: source.ownerChatId, rendererGeneration: "generation", handleId: claimed.resource.handleId };
+
+    assert.deepEqual(await registry.saveCopy(request, webContents), { ok: true });
+    assert.deepEqual(fs.readFileSync(target), PNG_1X1);
+    assert.equal(dialogs.length, 1);
+    assert.equal(dialogs[0].defaultPath, path.join(homePath, "photo.png"));
+
+    dialogResult = { canceled: true, filePath: "" };
+    assert.deepEqual(await registry.saveCopy(request, webContents), { ok: true });
+    assert.equal(dialogs.length, 2);
+
+    for (const forged of [{ ...request, ownerChatId: "other" }, { ...request, rendererGeneration: "stale" }]) {
+      assert.equal((await registry.saveCopy(forged, webContents)).ok, false);
+    }
+    assert.equal((await registry.saveCopy(request, sender(99))).ok, false);
+    assert.equal(dialogs.length, 2);
+
+    dialogResult = { canceled: false, filePath: path.join(homePath, "missing.png") };
+    fs.unlinkSync(imagePath);
+    assert.equal((await registry.saveCopy(request, webContents)).ok, false);
+  } finally { registry.dispose(); fs.rmSync(homePath, { recursive: true, force: true }); }
+});

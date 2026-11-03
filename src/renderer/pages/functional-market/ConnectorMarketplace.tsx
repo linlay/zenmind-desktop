@@ -30,6 +30,7 @@ interface ConnectorMarketplaceProps {
   initialItemId?: string; shareTarget?: MarketShareTarget | null;
   onDismissSharedItem?: () => void; onShareItem?: (item: MarketItem) => void;
   onTabChange: (tab: MarketTab) => void; onManage: () => void; onChanged?: () => void;
+  onRequestAgentChatNavigate: (targetPath: string) => void;
 }
 export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   const { t } = useI18n();
@@ -38,12 +39,14 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
   const [mcpManagerOpen, setMcpManagerOpen] = useState(false);
   const [localItems, setLocalItems] = useState<MarketItem[]>([]);
   const [query, setQuery] = useState("");
-  const [detailItem, setDetailItem] = useState<MarketItem | null>(null);
+  const [detailConnectorId, setDetailConnectorId] = useState<string | null>(null);
   const [disconnectItem, setDisconnectItem] = useState<MarketItem | null>(null);
   const runtime = useMarketConnectorFlow(props.onChanged, (agentKey, draft) => {
     const search = new URLSearchParams({ newChat: String(Date.now()), composerDraft: draft ?? "" });
-    navigate(createAgentWebclientAgentPath(agentKey, search));
+    props.onRequestAgentChatNavigate(createAgentWebclientAgentPath(agentKey, search));
   });
+  const items = [...props.items, ...localItems.filter(local => !props.items.some(item => (item.connectorId || item.id) === local.connectorId))];
+  const detailItem = items.find(item => (item.connectorId || item.id) === detailConnectorId) ?? null;
   const sharedItem = useMemo(() => props.shareTarget ? sharedMarketItem(props.items, props.shareTarget.context) : null, [props.items, props.shareTarget]);
   const visibleDetailItem = props.shareTarget ? sharedItem : detailItem;
   const sharedIntent = useRef("");
@@ -54,21 +57,20 @@ export function ConnectorMarketplace(props: ConnectorMarketplaceProps) {
       sharedIntent.current = props.shareTarget.intentId;
       if (runtime.busy || runtime.flow || runtime.error) void runtime.cancel();
     }
-    setDetailItem(sharedItem);
+    setDetailConnectorId(sharedItem?.connectorId || sharedItem?.id || null);
   }, [props.shareTarget, sharedItem, runtime.busy, runtime.flow, runtime.error, runtime.cancel]);
   useEffect(() => {
     if (props.shareTarget || !props.initialItemId || initialItem.current === props.initialItemId) return;
     const item = props.items.find(item => item.id === props.initialItemId && item.type === "connector" && item.marketplaceAvailable);
-    if (item) { initialItem.current = props.initialItemId; setDetailItem(item); }
+    if (item) { initialItem.current = props.initialItemId; setDetailConnectorId(item.connectorId || item.id); }
   }, [props.initialItemId, props.items, props.shareTarget]);
-  function openDetail(item: MarketItem) { props.onDismissSharedItem?.(); setDetailItem(item); }
-  const closeDetail = () => { props.onDismissSharedItem?.(); setDetailItem(null); setDisconnectItem(null); };
+  function openDetail(item: MarketItem) { props.onDismissSharedItem?.(); setDetailConnectorId(item.connectorId || item.id); }
+  const closeDetail = () => { props.onDismissSharedItem?.(); setDetailConnectorId(null); setDisconnectItem(null); };
   const configureConnector = (item: MarketItem) => {
     const route = createAgentWebclientConnectorManagementPath(runtime.getConnectorId(item));
-    if (route) { setDetailItem(null); navigate(route); }
+    if (route) { closeDetail(); navigate(route); }
   };
   const message = (value: string) => value.startsWith("market.") ? t(value as TranslationKey) : value;
-  const items = [...props.items, ...localItems.filter(local => !props.items.some(item => (item.connectorId || item.id) === local.connectorId))];
   const visible = items.filter(item => item.type === "connector" && (item.marketplaceAvailable || item.source === "local") && matchesMarketItemQuery(item, query, t));
   return <MarketPageFrame activeTab="mcps" tabs={getMarketTabDefinitions(t)} onTabChange={props.onTabChange}
     toolbar={<div className="skill-discovery-toolbar"><label className="skill-discovery-search"><SearchOutlined aria-hidden="true" />

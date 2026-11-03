@@ -44,6 +44,8 @@ window.electronAPI = {
   onServicesChanged: () => noop,
   currentPage: { publishSnapshot: asyncNoop },
   settings: {
+    onRuntimeResetProgress: () => noop,
+    onDesktopConfigChanged: () => noop,
     getDataRoot: async () => "C:\\Preview\\ZenMind",
     getGeneralSettings: async () => ({ deviceName: "预览设备", preventSleepWhileRunning: true, desktopActionConfirmationEnabled: true, desktopActionConfirmationTimeoutSeconds: 60 }),
     getDesktopDeviceInfo: async () => ({ deviceName: "预览设备", deviceId: "preview-device" }),
@@ -65,7 +67,8 @@ window.electronAPI = {
   },
   services: { list: async () => services, getBrowserWebclient: async () => ({ running: false, url: "" }), readConfig: async () => ({ ok: true, content: "# 服务配置\nPORT: 19090\nHOST: 127.0.0.1", path: "/preview/config/config.yaml", exists: true, source: "installed" }) },
   updates: { onChanged: () => noop, getState: async () => ({ phase: "idle", source: "release", currentVersion: "0.4.50", version: "", autoDownload: true, releaseNotes: [], canInstall: false }) },
-  sso: { getStatus: async () => ({ authenticated: false }) },
+  sso: { getStatus: async () => ({ authenticated: false }), onStatusChanged: () => noop },
+  enterpriseChat: { onStateChanged: () => noop },
   market: { getSettings: async () => ({ enabled: false, serverUrl: "" }) },
   kanban: { getSettings: async () => ({ settings: { cloud: { enabled: false, serverUrl: "" } }, connectionState: "disabled" }) },
   tunnelHub: { getStatus: async () => ({ enabled: false, connected: false, state: "disabled" }) },
@@ -96,6 +99,7 @@ function Preview() {
   const [platform, setPlatform] = useState("mac");
   const [sidebarWidth, setSidebarWidth] = useState(190);
   const [empty, setEmpty] = useState(false);
+  const [runtimeById, setRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({ notes: runtime });
   const [locale, setLocale] = useState<SupportedLocale>(DEFAULT_LOCALE);
   const t = useMemo(() => createTranslator(locale), [locale]);
   useLayoutEffect(() => {
@@ -112,8 +116,10 @@ function Preview() {
       <Routes><Route path="/settings/:sectionId" element={<SettingsPage
         themeMode={appearance.themeMode} onThemeModeChange={async mode => { await appearance.setThemeMode(mode); }} isMac={platform === "mac"} isWindows={platform === "windows"}
         sidebarNavOrder={[]} availableSidebarNavOrderItems={[]} onSidebarNavOrderChange={noop} marketEnabled={false}
-        webItems={empty ? [] : [...websites, ...webapps]} webOpenEntryKeys={[]} runningWebappCount={1}
-        copilotAgentOptions={[]} onRefreshCopilotAgentOptions={asyncNoop} webappPublishStateById={{}} onWebItemsRefresh={asyncNoop} debugVisible={true} onCloseDebug={noop}
+        webItems={empty ? [] : [...websites, ...webapps]} webOpenEntryKeys={[]} runningWebappCount={empty ? 0 : Object.values(runtimeById).filter(state => state?.status === "running").length}
+        webappRuntimeById={runtimeById} onWebappRuntimeStateChange={(id, state) => setRuntimeById(current => ({ ...current, [id]: state }))}
+        copilotAgentOptions={[]} onRefreshCopilotAgentOptions={asyncNoop} webappPublishStateById={{}} webappPublishInfo={null}
+        onWebappPublishStatusChange={noop} onWebItemsRefresh={async () => result()} debugVisible={true} onCloseDebug={noop}
       />} /></Routes>
       </RendererI18nContext.Provider>
     </main></div>

@@ -182,3 +182,25 @@ test("stopping during listener startup prevents a late running instance", async 
   await rejected;
   assert.equal(getBrowserWebclientState().running, false);
 });
+
+
+test("browser voice media uses the same launch session and Platform without URL tokens", async t => {
+  const { record, seen } = await fixture(t);
+  const host = await createBrowserWebclientHost(record, 0); t.after(() => host.stop());
+  const { cookie } = await authorize(host);
+  const headers = { Origin: host.url, Cookie: cookie, Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version": "13" };
+  const { response, socket } = await new Promise((resolve, reject) => {
+    const req = http.request(`${host.url}/api/voice/ws`, { headers });
+    req.on("upgrade", (response, socket) => resolve({ response, socket })); req.on("error", reject); req.end();
+  });
+  assert.equal(response.statusCode, 101);
+  assert.equal(response.headers["sec-websocket-protocol"], undefined);
+  assert.equal(seen.at(-1).url, "/api/voice/ws");
+  assert.equal(seen.at(-1).headers["sec-websocket-protocol"], `bearer.${token()}`);
+  assert.equal(seen.at(-1).headers.origin, record.envOverrides.get("BASE_URL"));
+  assert.equal(seen.at(-1).headers.cookie, undefined);
+  socket.destroy();
+  for (const route of ["/api/voice/ws?token=legacy", "/api/voice/other"]) {
+    assert.equal((await request(`${host.url}${route}`, { headers })).status, 401);
+  }
+});

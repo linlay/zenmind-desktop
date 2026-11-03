@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ShareRecord, ShareCreateResult } from "../../../shared/contracts";
+import type { ShareRecord, ShareCreateResult, ConversationShareOmittedResource } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
 
 export type ConversationShareAction = "copy" | "qr" | "browser";
@@ -11,11 +11,11 @@ export type ConversationShareDialogState = {
   phase: ConversationSharePhase;
   workingAction: ConversationShareAction | null;
   feedback: ShareFeedback | null;
-  warning: string;
+  omittedResources: ConversationShareOmittedResource[];
 };
 
 export function useShareDialog(
-  create: () => Promise<ShareCreateResult>,
+  create: () => Promise<ShareCreateResult & { omittedResources?: ConversationShareOmittedResource[] }>,
   t: TranslateFunction,
 ) {
   const [state, setState] = useState<ConversationShareDialogState>(() => ({
@@ -23,7 +23,7 @@ export function useShareDialog(
     phase: "choice",
     workingAction: null,
     feedback: null,
-    warning: "",
+    omittedResources: [],
   }));
   const generationRef = useRef(0);
   const workingRef = useRef(false);
@@ -55,15 +55,15 @@ export function useShareDialog(
 
     try {
       let record = createdRecordRef.current;
-      let warning = state.warning;
+      let omittedResources = state.omittedResources;
       if (!record) {
         const result = await create();
         if (!result.ok) throw new Error(result.message || t("sidebar.chat.shareFailed"));
         record = result.record;
-        warning = result.warning || "";
+        omittedResources = result.omittedResources ?? [];
         if (!isCurrent()) return;
         createdRecordRef.current = record;
-        setState((current) => ({ ...current, createdRecord: record, warning }));
+        setState((current) => ({ ...current, createdRecord: record, omittedResources }));
       }
 
       if (action === "copy") {
@@ -82,7 +82,7 @@ export function useShareDialog(
       setState((current) => ({
         ...current,
         createdRecord: record,
-        warning,
+        omittedResources,
         workingAction: null,
         phase: action === "qr" ? "qr" : "done",
         feedback: { kind: "success", message: successMessage },

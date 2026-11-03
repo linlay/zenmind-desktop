@@ -15,15 +15,31 @@ import {
   createFailedStatus
 } from "./sso-state";
 import type { DesktopSsoUserInfoSource } from "./sso-config";
-import { getDesktopSsoAccessTokenFilePath } from "../../infrastructure/filesystem/user-paths";
+import { getDesktopSsoIdTokenFilePath } from "../../infrastructure/filesystem/user-paths";
 import { randomUUID, createHash } from "node:crypto";
 import { getDesktopSsoAvatarCacheConfig } from "./sso-config";
 import { buildDesktopSsoAvatarUrl, DESKTOP_SSO_AVATAR_PROTOCOL } from "../../../shared/sso-avatar";
 import { getJwtPayload, normalizeStringClaim, normalizeAudience } from "./sso-claims";
 import { DESKTOP_SSO_ACCESS_TOKEN_REFRESH_SKEW_MS } from "./sso-defaults";
 import { t } from "../../support/i18n/main-i18n";
+import { clearSsoCredentials } from "./sso-credentials";
 import { clearCachedDesktopSsoAvatar } from "./avatar-storage";
 import { closeCallbackServer } from "./callback-lifecycle";
+
+function serializeSession(
+  status: DesktopSsoStatus,
+  metadata: DesktopSsoSessionMetadata = {}
+) {
+  return JSON.stringify({
+    schemaVersion: 2,
+    authenticated: status.authenticated,
+    issuer: metadata.issuer || status.user?.issuer || "",
+    audience: metadata.audience || status.user?.audience || "",
+    authMode: metadata.authMode || "oidc",
+    message: status.message,
+    updatedAt: status.updatedAt
+  }, null, 2) + "\n";
+}
 
 export function saveSession(
   app: App,
@@ -32,15 +48,7 @@ export function saveSession(
   metadata: DesktopSsoSessionMetadata = {}
 ) {
   fs.mkdirSync(path.dirname(getSessionPath(app)), { recursive: true });
-  fs.writeFileSync(getSessionPath(app), JSON.stringify({
-    schemaVersion: 2,
-    authenticated: status.authenticated,
-    issuer: metadata.issuer || status.user?.issuer || "",
-    audience: metadata.audience || status.user?.audience || "",
-    authMode: metadata.authMode || "oidc",
-    message: status.message,
-    updatedAt: status.updatedAt
-  }, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  fs.writeFileSync(getSessionPath(app), serializeSession(status, metadata), { encoding: "utf8", mode: 0o600 });
 }
 
 export function persistCurrentSessionStatus() {
@@ -50,6 +58,18 @@ export function persistCurrentSessionStatus() {
   saveSession(desktopSsoRuntimeState.currentSessionApp, desktopSsoRuntimeState.currentStatus, desktopSsoRuntimeState.currentIdToken, desktopSsoRuntimeState.currentSessionMetadata);
 }
 
+function serializeUserInfo(
+  user: DesktopSsoClaims,
+  source: DesktopSsoUserInfoSource = "sso"
+) {
+  return `${JSON.stringify({
+    schemaVersion: 2,
+    ...user,
+    updatedAt: new Date().toISOString(),
+    source
+  }, null, 2)}\n`;
+}
+
 export function saveUserInfoFile(
   app: Pick<App, "getPath">,
   user: DesktopSsoClaims,
@@ -57,12 +77,7 @@ export function saveUserInfoFile(
 ) {
   const filePath = getDesktopSsoUserInfoFilePath(app);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify({
-    schemaVersion: 2,
-    ...user,
-    updatedAt: new Date().toISOString(),
-    source
-  }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  fs.writeFileSync(filePath, serializeUserInfo(user, source), { encoding: "utf8", mode: 0o600 });
 }
 
 export function removeUserInfoFile(app: Pick<App, "getPath">) {
@@ -73,12 +88,12 @@ export function removeUserInfoFile(app: Pick<App, "getPath">) {
   }
 }
 
-export function saveAccessTokenFile(app: Pick<App, "getPath">, accessToken: string) {
+export function saveIdTokenFile(app: Pick<App, "getPath">, accessToken: string) {
   const token = accessToken.trim();
   if (!token) {
     return;
   }
-  const filePath = getDesktopSsoAccessTokenFilePath(app);
+  const filePath = getDesktopSsoIdTokenFilePath(app);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporaryPath = path.join(
     path.dirname(filePath),
@@ -87,6 +102,7 @@ export function saveAccessTokenFile(app: Pick<App, "getPath">, accessToken: stri
   try {
     fs.writeFileSync(temporaryPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
     fs.renameSync(temporaryPath, filePath);
+    fs.rmSync(path.join(path.dirname(filePath), "sso-access-token.txt"), { force: true });
   } catch (error) {
     try {
       fs.rmSync(temporaryPath, { force: true });
@@ -97,10 +113,11 @@ export function saveAccessTokenFile(app: Pick<App, "getPath">, accessToken: stri
   }
 }
 
-export function removeAccessTokenFile(app: Pick<App, "getPath">) {
-  const filePath = getDesktopSsoAccessTokenFilePath(app);
+export function removeIdTokenFile(app: Pick<App, "getPath">, includeLegacy = true) {
+  const filePath = getDesktopSsoIdTokenFilePath(app);
   try {
     fs.rmSync(filePath, { force: true });
+    if (includeLegacy) fs.rmSync(path.join(path.dirname(filePath), "sso-access-token.txt"), { force: true });
     if (fs.existsSync(filePath)) {
       return new Error(`access token file still exists after removal: ${filePath}`);
     }
@@ -178,8 +195,9 @@ export function persistedDesktopSsoUser(
     : withoutAvatarUrl(user);
 }
 
-export function readDesktopSsoAccessToken(app: Pick<App, "getPath">) {
-  const filePath = getDesktopSsoAccessTokenFilePath(app);
+export function readDesktopSsoIdToken(app: Pick<App, "getPath">) {
+  let filePath = getDesktopSsoIdTokenFilePath(app);
+  if (!fs.existsSync(filePath)) filePath = path.join(path.dirname(filePath), "sso-access-token.txt");
   if (!fs.existsSync(filePath)) {
     return "";
   }
@@ -190,8 +208,8 @@ export function readDesktopSsoAccessToken(app: Pick<App, "getPath">) {
   }
 }
 
-export function readDesktopSsoAccessTokenUser(app: Pick<App, "getPath">): DesktopSsoClaims | null {
-  const payload = getJwtPayload(readDesktopSsoAccessToken(app));
+export function readDesktopSsoIdTokenUser(app: Pick<App, "getPath">): DesktopSsoClaims | null {
+  const payload = getJwtPayload(readDesktopSsoIdToken(app));
   const sub = normalizeStringClaim(payload.sub);
   const expiresAt = typeof payload.exp === "number" ? payload.exp : Number.NaN;
   if (!sub || !Number.isFinite(expiresAt) || expiresAt <= Date.now() / 1000) {
@@ -208,20 +226,24 @@ export function readDesktopSsoAccessTokenUser(app: Pick<App, "getPath">): Deskto
   };
 }
 
-export function desktopSsoAccessTokenNeedsRefresh(
+export function desktopSsoIdTokenNeedsRefresh(
   app: Pick<App, "getPath">,
   minValidityMs = DESKTOP_SSO_ACCESS_TOKEN_REFRESH_SKEW_MS
 ) {
-  const token = desktopSsoRuntimeState.currentAccessToken || readDesktopSsoAccessToken(app);
+  const token = desktopSsoRuntimeState.currentBusinessToken || readDesktopSsoIdToken(app);
   if (!token) {
     return true;
   }
-  const expirationClaim = getJwtPayload(token).exp;
+  const payload = getJwtPayload(token);
+  const expirationClaim = payload.exp;
   const expiresAtSeconds = typeof expirationClaim === "number" ? expirationClaim : Number.NaN;
   if (!Number.isFinite(expiresAtSeconds) || expiresAtSeconds <= 0) {
     return true;
   }
-  return expiresAtSeconds * 1000 <= Date.now() + Math.max(0, minValidityMs);
+  const lifetime = typeof payload.iat === "number" && payload.iat < expiresAtSeconds
+    ? (expiresAtSeconds - payload.iat) * 1000 : undefined;
+  const skew = lifetime === undefined ? minValidityMs : Math.min(minValidityMs, lifetime * 0.2);
+  return expiresAtSeconds * 1000 <= Date.now() + Math.max(0, skew);
 }
 
 export function loadSession(app: App) {
@@ -230,7 +252,7 @@ export function loadSession(app: App) {
   desktopSsoRuntimeState.unverifiedCookieSessionCandidate = false;
   desktopSsoRuntimeState.currentStatus = createSignedOutStatus(t("sso.notSignedIn"));
   desktopSsoRuntimeState.currentIdToken = "";
-  desktopSsoRuntimeState.currentAccessToken = "";
+  desktopSsoRuntimeState.currentBusinessToken = "";
   desktopSsoRuntimeState.currentSessionAuthMode = null;
   desktopSsoRuntimeState.currentSessionApp = null;
   desktopSsoRuntimeState.currentSessionMetadata = null;
@@ -253,11 +275,11 @@ export function loadSession(app: App) {
       const sessionIssuer = typeof parsed.issuer === "string" ? parsed.issuer.trim() : "";
       const userMatchesSession = !user || !sessionIssuer || !user.issuer || user.issuer === sessionIssuer;
       const restoredUser = presentDesktopSsoUser(app, userMatchesSession ? user : null);
-      desktopSsoRuntimeState.currentAccessToken = readDesktopSsoAccessToken(app);
+      desktopSsoRuntimeState.currentBusinessToken = readDesktopSsoIdToken(app);
       const completedSteps = createCompletedSteps({
         session: true,
         userInfo: Boolean(restoredUser),
-        accessToken: Boolean(desktopSsoRuntimeState.currentAccessToken)
+        accessToken: Boolean(desktopSsoRuntimeState.currentBusinessToken)
       });
       desktopSsoRuntimeState.currentStatus = createAuthenticatedStatus(restoredUser, completedSteps, {
         message: getCompletedDesktopSsoMessage(completedSteps)
@@ -298,15 +320,127 @@ export function beginAuthenticatedSession(
   saveSession(app, status, idToken, metadata);
   clearCachedDesktopSsoAvatar(app);
   removeUserInfoFile(app);
-  removeAccessTokenFile(app);
+  removeIdTokenFile(app);
   removeLegacyDesktopSsoSiteTokenFile(app);
-  desktopSsoRuntimeState.currentAccessToken = "";
+  desktopSsoRuntimeState.currentBusinessToken = "";
   desktopSsoRuntimeState.currentIdToken = idToken.trim();
   desktopSsoRuntimeState.currentSessionAuthMode = metadata.authMode;
   desktopSsoRuntimeState.currentSessionApp = app;
   desktopSsoRuntimeState.currentSessionMetadata = { ...metadata };
   desktopSsoRuntimeState.loadedSessionPath = getSessionPath(app);
   desktopSsoRuntimeState.unverifiedCookieSessionCandidate = false;
+  setCurrentStatus(status);
+  return cloneStatus(status);
+}
+
+function commitVerifiedDesktopSsoSession(
+  app: App,
+  user: DesktopSsoClaims,
+  accessToken: string,
+  metadata: Required<Pick<DesktopSsoSessionMetadata, "issuer" | "audience" | "authMode">>
+) {
+  const token = accessToken.trim();
+  const sub = user.sub.trim();
+  if (!token) throw new Error(t("sso.cookieAccessTokenEmpty"));
+  if (!sub) throw new Error(t("sso.token.cookieUserInfoSubMissing", { path: "sub" }));
+  const previousUser = readUserInfoFile(app);
+  const normalizedUser: DesktopSsoClaims = {
+    ...persistedDesktopSsoUser(app, user),
+    sub,
+    name: user.name?.trim() || sub
+  };
+  const status = createAuthenticatedStatus(presentDesktopSsoUser(app, normalizedUser), createCompletedSteps({
+    session: true,
+    userInfo: true,
+    accessToken: true
+  }));
+  const tokenPath = getDesktopSsoIdTokenFilePath(app);
+  // Stage every file before replacing anything. The canonical token is replaced
+  // last, so preparation failures leave the valid token available to consumers.
+  const files = [
+    { filePath: getSessionPath(app), content: serializeSession(status, metadata) },
+    { filePath: getDesktopSsoUserInfoFilePath(app), content: serializeUserInfo(normalizedUser, "browser_session") },
+    { filePath: tokenPath, content: `${token}\n` }
+  ].map((file) => {
+    let previous: Buffer | null = null;
+    try {
+      previous = fs.readFileSync(file.filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return {
+      ...file,
+      previous,
+      temporaryPath: path.join(path.dirname(file.filePath), `.${path.basename(file.filePath)}.${process.pid}.${randomUUID()}.tmp`),
+      committed: false
+    };
+  });
+  try {
+    for (const file of files) {
+      fs.mkdirSync(path.dirname(file.filePath), { recursive: true });
+      fs.writeFileSync(file.temporaryPath, file.content, { encoding: "utf8", mode: 0o600 });
+    }
+    for (const file of files) {
+      fs.renameSync(file.temporaryPath, file.filePath);
+      file.committed = true;
+    }
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    for (const file of [...files].reverse()) {
+      if (!file.committed) continue;
+      try {
+        if (file.previous === null) {
+          fs.rmSync(file.filePath, { force: true });
+        } else {
+          fs.writeFileSync(file.temporaryPath, file.previous, { mode: 0o600 });
+          fs.renameSync(file.temporaryPath, file.filePath);
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], "SSO session publication rollback failed.");
+    throw error;
+  } finally {
+    for (const file of files) {
+      try { fs.rmSync(file.temporaryPath, { force: true }); } catch { /* A temporary file is never authoritative. */ }
+    }
+  }
+  // Nothing below may withdraw the old token or emit an incomplete identity.
+  // In particular, do not reuse beginAuthenticatedSession during renewal.
+  if (!previousUser || desktopSsoAvatarVersion(previousUser) !== desktopSsoAvatarVersion(normalizedUser)) {
+    clearCachedDesktopSsoAvatar(app);
+  }
+  removeLegacyDesktopSsoSiteTokenFile(app);
+  try { fs.rmSync(path.join(path.dirname(tokenPath), "sso-access-token.txt"), { force: true }); } catch { /* Canonical publication already succeeded. */ }
+  desktopSsoRuntimeState.currentBusinessToken = token;
+  desktopSsoRuntimeState.currentIdToken = "";
+  desktopSsoRuntimeState.currentSessionAuthMode = metadata.authMode;
+  desktopSsoRuntimeState.currentSessionApp = app;
+  desktopSsoRuntimeState.currentSessionMetadata = { ...metadata };
+  desktopSsoRuntimeState.loadedSessionPath = getSessionPath(app);
+  desktopSsoRuntimeState.unverifiedCookieSessionCandidate = false;
+  desktopSsoRuntimeState.currentStatus = cloneStatus(status);
+  return cloneStatus(status);
+}
+
+/** The controller publishes the complete renewal once after scheduling timers. */
+export function commitRenewedDesktopSsoSession(app: App, accessToken: string, user: DesktopSsoClaims) {
+  return commitVerifiedDesktopSsoSession(app, user, accessToken, {
+    issuer: user.issuer, audience: user.audience, authMode: "browser-cookie"
+  });
+}
+
+/** Restore a verified identity without transient login-step notifications. */
+export function publishRestoredDesktopSsoSession(
+  app: App,
+  user: DesktopSsoClaims,
+  accessToken: string,
+  metadata: Required<Pick<DesktopSsoSessionMetadata, "issuer" | "audience" | "authMode">>
+) {
+  const status = commitVerifiedDesktopSsoSession(app, user, accessToken, metadata);
+  closeCallbackServer();
+  desktopSsoRuntimeState.pendingLogin = null;
   setCurrentStatus(status);
   return cloneStatus(status);
 }
@@ -347,8 +481,8 @@ export function completeAccessTokenStep(app: Pick<App, "getPath">, accessToken: 
   if (!token) {
     return cloneStatus(desktopSsoRuntimeState.currentStatus);
   }
-  saveAccessTokenFile(app, token);
-  desktopSsoRuntimeState.currentAccessToken = token;
+  saveIdTokenFile(app, token);
+  desktopSsoRuntimeState.currentBusinessToken = token;
   if (desktopSsoRuntimeState.currentStatus.authenticated && desktopSsoRuntimeState.currentStatus.completedSteps.session) {
     const completedSteps = createCompletedSteps({
       ...desktopSsoRuntimeState.currentStatus.completedSteps,
@@ -394,16 +528,19 @@ export function finalizeDesktopSsoLoginAttempt(
 }
 
 export function clearSession(app: App) {
+  desktopSsoRuntimeState.credentialGeneration++;
+  let credentialRemovalError: Error | undefined;
+  try { clearSsoCredentials(app); } catch { credentialRemovalError = new Error("SSO local credentials could not be removed."); }
   closeCallbackServer();
   desktopSsoRuntimeState.pendingLogin = null;
-  desktopSsoRuntimeState.currentAccessToken = "";
+  desktopSsoRuntimeState.currentBusinessToken = "";
   desktopSsoRuntimeState.currentIdToken = "";
   desktopSsoRuntimeState.currentSessionAuthMode = null;
   desktopSsoRuntimeState.currentSessionApp = null;
   desktopSsoRuntimeState.currentSessionMetadata = null;
   desktopSsoRuntimeState.loadedSessionPath = getSessionPath(app);
   desktopSsoRuntimeState.unverifiedCookieSessionCandidate = false;
-  const accessTokenRemovalError = removeAccessTokenFile(app);
+  const accessTokenRemovalError = removeIdTokenFile(app);
   removeLegacyDesktopSsoSiteTokenFile(app);
   removeUserInfoFile(app);
   clearCachedDesktopSsoAvatar(app);
@@ -413,7 +550,7 @@ export function clearSession(app: App) {
   } catch {
     // Session cleanup is best effort; the in-memory state is authoritative for this run.
   }
-  return accessTokenRemovalError;
+  return credentialRemovalError || accessTokenRemovalError;
 }
 
 export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
@@ -438,7 +575,7 @@ export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
     setCurrentStatus(status);
     return cloneStatus(status);
   }
-  desktopSsoRuntimeState.currentAccessToken = "";
+  desktopSsoRuntimeState.currentBusinessToken = "";
   desktopSsoRuntimeState.currentIdToken = "";
   desktopSsoRuntimeState.currentSessionAuthMode = null;
   desktopSsoRuntimeState.currentSessionApp = null;

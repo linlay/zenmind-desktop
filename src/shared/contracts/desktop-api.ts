@@ -7,7 +7,7 @@ import type { WorkPanelBrowserShortcut } from "../work-panel-browser";
 import type { DesktopArtifactListInput, DesktopArtifactListResult, DesktopArtifactActionInput, DesktopArtifactActionResult } from "../artifacts";
 import type { DesktopUpdatesApi } from "../desktop-updates";
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
-import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
+import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions, DesktopSkinPreview, InstalledDesktopSkinId } from "../desktop-appearance";
 import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubSettings, TunnelHubSettingsInput, TunnelHubSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { MarketSkillContentResult } from "./market-skill-detail";
@@ -774,6 +774,8 @@ export type DesktopUsageProfileResult =
       fetchedAt: string;
     };
 
+export type DesktopRuntimeResetStage = "preparing" | "stopping" | "restoring" | "restarting" | "failed";
+
 export interface DesktopRuntimeEnvResetResult {
   ok: boolean;
   restartScheduled?: boolean;
@@ -791,7 +793,7 @@ export type DesktopStateFileName =
   | "env-bootstrap.json"
   | "pet-state.json"
   | "sso-session.json"
-  | "sso-access-token.txt";
+  | "sso-id-token.txt";
 
 export interface DesktopStateFileSnapshot {
   name: DesktopStateFileName;
@@ -957,6 +959,7 @@ export interface DesktopApi {
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
     setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
     setWorkPanelFullscreenActive: (active: boolean) => void;
+    setMainWindowSidebarCollapsed: (collapsed: boolean) => void;
     requestWindowClose: () => void;
     minimizeWindow: () => Promise<{ ok: boolean; message?: string }>;
     popupApplicationMenu: (request: { menu: "file" | "edit" | "view" | "help"; x: number; y: number }) => Promise<{ ok: boolean }>;
@@ -1161,6 +1164,10 @@ export interface DesktopApi {
     getConnectorAgent(agentKey: string): Promise<MarketConnectorAgentState>;
     getConnectorAgentTools(input: { connectorId: string; agentKey: string }): Promise<MarketConnectorAgentToolState>;
     readSkillContent: (id: string) => Promise<MarketSkillContentResult>;
+    installSkin: (id: string) => Promise<MarketCommandResult>;
+    readSkinAsset: (input: { id: string; version: string; path: string }) => Promise<{ dataUrl: string }>;
+    installPet: (id: string) => Promise<MarketCommandResult>;
+    readPetAsset: (input: { id: string; version: string; path: string }) => Promise<{ dataUrl: string }>;
     getSkillPins: () => Promise<MarketSkillPins>;
     saveSkillPins: (update: MarketSkillPinUpdate) => Promise<MarketSkillPins>;
     getSettings: () => Promise<MarketSettings>;
@@ -1190,6 +1197,7 @@ export interface DesktopApi {
     readLog: (options?: ServiceLogReadOptions) => Promise<ServiceLogReadResult>;
   };
   sso: {
+    retrySession: () => Promise<DesktopSsoStatus>;
     getStatus: () => Promise<DesktopSsoStatus>;
     startLogin: () => Promise<DesktopSsoStartResult>;
     cancelLogin: () => Promise<DesktopSsoCancelResult>;
@@ -1258,9 +1266,11 @@ export interface DesktopApi {
     setEnterpriseImEnabled: (enabled: boolean) => Promise<EnterpriseImSettings>;
     getTunnelHubSettings: () => Promise<TunnelHubSettings>;
     saveTunnelHubSettings: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
-    resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
+    resetRuntimeEnv: (action?: "reinstall" | "rollback") => Promise<DesktopRuntimeEnvResetResult>;
+    onRuntimeResetProgress: (listener: (stage: DesktopRuntimeResetStage) => void) => () => void;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
     getDesktopSkin: () => Promise<DesktopSkinResult>;
+    getDesktopSkinPreview: (id: InstalledDesktopSkinId, mode: "light" | "dark") => Promise<DesktopSkinPreview | null>;
     setDesktopSkin: (skinId: DesktopSkinId, options?: DesktopSkinSelectionOptions) => Promise<DesktopSkinResult>;
     importDesktopSkinPackage: () => Promise<DesktopSkinResult>;
     importDroppedDesktopSkinPackage: (file: File) => Promise<DesktopSkinResult>;
@@ -1321,6 +1331,7 @@ export interface DesktopApi {
       read: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageReadResult>;
       release: (input: WorkPanelResourceImageReleaseRequest) => Promise<WorkPanelResourceImageActionResult>;
       reveal: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageActionResult>;
+      saveCopy: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageActionResult>;
       openExternal: (input: WorkPanelResourceImageExternalOpenRequest) => Promise<WorkPanelResourceImageActionResult>;
       ai: (input: WorkPanelResourceImageAiRequest) => Promise<WorkPanelResourceImageAiResult>;
       cancelAi: (input: WorkPanelResourceImageAiCancelRequest) => Promise<WorkPanelResourceImageActionResult>;

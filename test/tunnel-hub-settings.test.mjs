@@ -52,7 +52,7 @@ function tunnelDeviceSecretPath(app) {
 }
 
 function writeDesktopSsoAccessToken(app, token = "desktop-sso-access-token") {
-  const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-access-token.txt");
+  const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-id-token.txt");
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
   fs.writeFileSync(tokenPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
 }

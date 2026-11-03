@@ -58,12 +58,12 @@ test("installed Market WebApps open only after an explicit user action", () => {
   assert.match(styles, /\.market-store-description\.is-standalone\s*\{[\s\S]*?min-height:\s*30px;/u);
 });
 
-test("Market top navigation exposes Skills, Connectors and Website Apps", () => {
+test("Market top navigation exposes Skills, Connectors, Website Apps, Pets and Skins", () => {
   const model = readSource("src", "renderer", "pages", "functional-market", "marketPageModel.ts");
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
 
   assert.match(model, /DEFAULT_MARKET_TAB:\s*MarketTab\s*=\s*"skills"/u);
-  assert.match(model, /VISIBLE_MARKET_TABS:\s*readonly MarketTab\[\]\s*=\s*\["skills",\s*"mcps",\s*"websiteApps"\]/u);
+  assert.match(model, /VISIBLE_MARKET_TABS:\s*readonly MarketTab\[\]\s*=\s*\["skills",\s*"mcps",\s*"websiteApps",\s*"pets",\s*"skins"\]/u);
   assert.match(model, /return VISIBLE_MARKET_TABS\.map/u);
   assert.doesNotMatch(storefront, /ReloadOutlined|market\.toolbar\.refreshMarket|market-store-toolbar-button is-icon-only/u);
 });

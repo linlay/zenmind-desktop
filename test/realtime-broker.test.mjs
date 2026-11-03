@@ -115,6 +115,28 @@ function requestOfType(socket, type) {
   return socket.sent.filter((frame) => frame.frame === "request" && frame.type === type);
 }
 
+for (const platform of ["darwin", "win32"]) {
+  test(`business notification pushes reach Desktop surfaces on ${platform}`, async (t) => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { ...originalPlatform, value: platform });
+    t.after(() => Object.defineProperty(process, "platform", originalPlatform));
+    const h = createHarness(t);
+    const types = ["mail.updated", "chat.renamed", "automation.execution.created",
+      "automation.execution.updated", "automation.execution.completed"];
+    const received = [];
+    await h.broker.ensureConnected("http://127.0.0.1:8080", h.token, "primary");
+    h.broker.subscribePush({ types, kind: "surface", consumerId: "notification-regression",
+      onPush: (frame) => received.push(frame) });
+    for (const type of types) {
+      h.socket("primary").emit({ frame: "push", type, data: { chatId: "chat-1", runId: "run-1",
+        startedAt: EPOCH_MS, completedAt: type.endsWith("completed") ? EPOCH_MS + 1 : null } });
+    }
+    await waitUntil(() => received.length === types.length);
+    assert.deepEqual(received.map((frame) => frame.type), types);
+    assert.equal(h.broker.getDiagnostics().unknownFrameCount, 0);
+  });
+}
+
 function explanationObserver(overrides = {}) {
   return rootObserver({ token: "explanation:g1:2:202", kind: "selection_explain", surfaceId: "selection-explain",
     generation: "g1", contextId: "chat-1", webContentsId: 202, ...overrides });
