@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "chatJsonl": "/absolute/path/to/explicitly-approved-chat.jsonl",
+  "chatId": "11111111-1111-4111-8111-111111111111",
+  "runs": [
+    {"runId": "replace-pricing", "scenario": "pricing"},
+    {"runId": "replace-controls", "scenario": "controls"},
+    {"runId": "replace-async", "scenario": "async"},
+    {"runId": "replace-frames", "scenario": "frames"},
+    {"runId": "replace-dialogs", "scenario": "dialogs"},
+    {"runId": "replace-tabs", "scenario": "tabs"},
+    {"runId": "replace-files", "scenario": "files"},
+    {"runId": "replace-budget", "scenario": "budget"},
+    {"runId": "replace-handoff-main", "scenario": "handoff", "phase": "main"},
+    {"runId": "replace-handoff-followup", "scenario": "handoff", "phase": "followup"},
+    {"runId": "replace-resume-main", "scenario": "resume", "phase": "main"},
+    {"runId": "replace-resume-followup", "scenario": "resume", "phase": "followup"},
+    {"runId": "replace-procurement", "scenario": "procurement"}
+  ]
+}

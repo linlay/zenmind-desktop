@@ -2,6 +2,7 @@ import { isPlainBridgeRecord, type CanonicalChatSyncRequest } from "../../../../
 import { MAIN_CHAT_SURFACE_ID } from "../../../../shared/surface-identity";
 import { requireAgentPlatformEpochMillis } from "../../../../shared/time-contract";
 import type { FramePortOptions } from "../ipc.shared";
+import type { RealtimeQueryAccepted } from "../realtime/realtime-broker.shared";
 import { PlatformFrameRecord, StreamBinding, protocolError, readOwner, readText, sameOwner } from "../ipc.shared";
 
 export interface QueryBindingPort {
@@ -162,8 +163,19 @@ export function createQueryBinding(deps: QueryBindingPort) {
       establishCanonicalChatIdentity(binding, chatId);
       return;
     }
-    const runId = readText(event.runId);
     const owner = readOwner(event);
+    if (!owner)
+      throw protocolError("run.start must include exactly one Run owner");
+    commitAcceptedRun(binding, { chatId, runId: readText(event.runId), owner });
+  }
+
+  /** Both Broker acceptance and the later queued run.start commit this one grant. */
+  function commitAcceptedRun(binding: StreamBinding, accepted: RealtimeQueryAccepted): void {
+    const chatId = readText(accepted.chatId);
+    const runId = readText(accepted.runId);
+    const owner = accepted.owner;
+    if (!chatId)
+      throw protocolError("run.start must include canonical chatId");
     if (!runId)
       throw protocolError("run.start must include canonical runId");
     if (!owner)
@@ -202,5 +214,5 @@ export function createQueryBinding(deps: QueryBindingPort) {
     binding.owner = owner;
     binding.runStarted = true;
   }
-  return { establishCanonicalChatIdentity, processQueryBootstrapFrame };
+  return { establishCanonicalChatIdentity, processQueryBootstrapFrame, commitAcceptedRun };
 }

@@ -494,6 +494,7 @@ export function createSessionController(options: FramePortOptions) {
     get availability() { return availability; },
     get sendRunEvent() { return sendRunEvent; },
     get processQueryBootstrapFrame() { return processQueryBootstrapFrame; },
+    get commitAcceptedRun() { return queryBinding.commitAcceptedRun; },
     get finishRetiringSession() { return finishRetiringSession; },
   });
   const queryBinding = createQueryBinding({

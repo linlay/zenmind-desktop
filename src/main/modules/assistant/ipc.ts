@@ -43,6 +43,7 @@ export interface AssistantIpcHandlerOptions {
   >;
   assistantBridge: any;
   assistantNavigationStatusClient: any;
+  releaseBrowserChat?: (chatId: string) => Promise<void>;
   /** The shared pending-renderer-requests Map (desktopActions.respond resolves into it) */
   desktopActionRendererRequests: Map<string, { resolve: (r: any) => void; timeout: ReturnType<typeof setTimeout> | null }>;
   /** The shared pending-confirmation-requests Map (desktopActions.respondConfirmation resolves into it) */
@@ -758,6 +759,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   ipcMain.handle("assistant.deleteChat", async (_event: any, chatId: string) => {
     const result = await assistantBridge.deleteChat(chatId);
     if (result.ok) {
+      await options.releaseBrowserChat?.(chatId).catch(() => undefined);
       assistantNavigationStatusClient?.scheduleRefresh(0);
     }
     return result;
@@ -778,6 +780,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   ipcMain.handle("assistant.archiveChat", async (_event: any, chatId: string) => {
     const result = await assistantBridge?.archiveChat(chatId);
     if (result?.ok) {
+      await options.releaseBrowserChat?.(chatId).catch(() => undefined);
       assistantNavigationStatusClient?.scheduleRefresh(0);
     }
     return result;

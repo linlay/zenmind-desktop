@@ -142,6 +142,22 @@ async function main() {
   assert.equal(await foregroundGuest.executeJavaScript("document.querySelector('#entry').value"), 'user foreground?');
   const windowFocused = win.isFocused();
   const focusedHostElement = await win.webContents.executeJavaScript("document.activeElement.getAttribute('src')");
+  const semanticGuest = webContents.fromId(aScope.readContainer().tabs[0].webContentsId);
+  await semanticGuest.executeJavaScript(`document.querySelector('#entry').setAttribute('aria-label','Project');
+    document.body.insertAdjacentHTML('beforeend','<input id="quantity" type="number" aria-label="Quantity"><textarea id="purpose" aria-label="Purpose"></textarea><select id="cost" aria-label="Cost"><option value="old">Old</option><option value="DX-420">Design</option></select><select id="payment" aria-label="Payment"><option value="advance">Advance</option><option value="net30">Net 30</option></select><button id="parallel" onclick="window.parallelClicks=(window.parallelClicks||0)+1">Parallel</button>')`);
+  const semanticObservation = (await gateway.executeCommand({ method: 'Surface.observe', surfaceId: aTarget }, aScope)).result;
+  const observedRef = name => ({ observationId: semanticObservation.observationId, ref: semanticObservation.elements.find(element => element.name === name).ref });
+  const semanticResults = await Promise.allSettled([
+    ['Project','fill','Design workstations'], ['Quantity','fill','6'], ['Cost','select','DX-420'],
+    ['Payment','select','net30'], ['Purpose','fill','Design team equipment'],
+  ].map(([name,action,value]) => gateway.executeCommand({ method:'Surface.interact', surfaceId:aTarget, params:{...observedRef(name),action,value} },aScope))
+    .concat(gateway.executeCommand({ method:'Surface.click',surfaceId:aTarget,params:observedRef('Parallel') },aScope)));
+  assert.ok(semanticResults.every(result => result.status === 'fulfilled'), JSON.stringify(semanticResults.map(result=>result.status==='fulfilled'?result.value:result.reason.message)));
+  assert.deepEqual(await semanticGuest.executeJavaScript('Object.fromEntries(["entry","quantity","cost","payment","purpose"].map(id=>[id,document.getElementById(id).value]))'),
+    { entry:'Design workstations',quantity:'6',cost:'DX-420',payment:'net30',purpose:'Design team equipment' });
+  assert.equal(await semanticGuest.executeJavaScript('window.parallelClicks'),1);
+  assert.equal(await foregroundGuest.executeJavaScript("document.querySelector('#entry').value"),'user foreground?');
+  await semanticGuest.executeJavaScript("document.querySelector('#entry').value=''");
   await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: aTarget, params: { expression: "document.querySelector('#entry').focus()" } }, aScope);
   const inputBox = await gateway.executeCommand({ method: 'Runtime.evaluate', surfaceId: aTarget, params: {expression:"(()=>{const r=document.querySelector('#entry').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()",returnByValue:true} }, aScope);
   for (const type of ['mousePressed','mouseReleased']) await gateway.executeCommand({method:'Input.dispatchMouseEvent',surfaceId:aTarget,params:{type,...inputBox.result.result.value,button:'left',clickCount:1}},aScope);

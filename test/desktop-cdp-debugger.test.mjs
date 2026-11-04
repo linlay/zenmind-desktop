@@ -744,12 +744,13 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
   const sentCommands = [];
   const createContents = (id) => {
     let attached = false;
-    return {
+    // WorkPanel guests are native event emitters; the page automation session listens for modals.
+    return Object.assign(new EventEmitter(), {
       id,
       isDestroyed: () => false,
       getURL: () => `https://work.example/${id}`,
       getTitle: () => `Work ${id}`,
-      debugger: {
+      debugger: Object.assign(new EventEmitter(), {
         isAttached: () => attached,
         attach: () => { attached = true; },
         detach: () => { attached = false; },
@@ -757,8 +758,8 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
           sentCommands.push({ id, method, params });
           return { value: id };
         }
-      }
-    };
+      })
+    });
   };
   const currentTab = { tabId: "current-tab", currentUrl: "https://current.example/", title: "Current", webContentsId: 501 };
   const ownedTab = { tabId: "owned-tab", currentUrl: "https://work.example/owned", title: "Owned", webContentsId: 502 };

@@ -3543,13 +3543,9 @@
   left: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
   height: var(--chat-work-panel-tabs-height);
   padding: var(--chat-work-panel-tabs-top-padding) 8px var(--chat-work-panel-tabs-bottom-padding);
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  overflow: hidden;
   background: var(--work-panel-tab-strip);
   app-region: no-drag;
   -webkit-app-region: no-drag;
@@ -3559,7 +3555,18 @@
   padding-right: 46px;
 }
 
-.chat-work-panel-tabs::-webkit-scrollbar {
+.chat-work-panel-tabs-scroll {
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.chat-work-panel-tabs-scroll::-webkit-scrollbar {
   display: none;
 }
 

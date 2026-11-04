@@ -13,6 +13,8 @@ export type DesktopCdpCommandDebugContext = {
   title?: string;
   timeoutMs?: number;
   logger?: DesktopCdpLogger;
+  /** Host transaction accounting follows the real command even after its response deadline. */
+  trackCommand?: (work: Promise<unknown>) => void;
 };
 
 export type DesktopCdpCommandDebugDetails = {
@@ -115,6 +117,7 @@ export async function sendDesktopCdpCommand(
   logger.debug?.("[desktop-cdp] start", compactDetails(baseDetails));
   try {
     const commandPromise = debuggerRef.sendCommand(method, params);
+    context.trackCommand?.(commandPromise);
     const timeoutPromise = new Promise<never>((_resolve, reject) => {
       timeout = setTimeout(() => {
         reject(new DesktopCdpTimeoutError({

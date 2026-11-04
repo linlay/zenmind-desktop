@@ -22,6 +22,7 @@ import {
 import { beginPlatformLoadDiagnostic } from "../load-diagnostic";
 import { resolveSelectionExplainTransport } from "../selection-explain-transport";
 import { updateBindingFromFrame } from "./query-binding";
+import type { RealtimeQueryAccepted } from "../realtime/realtime-broker.shared";
 import {
   authorizeSurface,
   createRootObserverToken,
@@ -45,6 +46,7 @@ export interface RequestDispatchPort {
   availability: () => Promise<{ baseUrl: string; token: string; }>;
   sendRunEvent: (session: LogicalSession, binding: StreamBinding, runEvent: Record<string, unknown>) => void;
   processQueryBootstrapFrame: (binding: StreamBinding, upstreamFrame: PlatformFrameRecord) => void;
+  commitAcceptedRun: (binding: StreamBinding, accepted: RealtimeQueryAccepted) => void;
   finishRetiringSession: (session: LogicalSession) => void;
 }
 
@@ -554,6 +556,12 @@ export function createRequestDispatch(deps: RequestDispatchPort) {
           },
         });
         void handle.accepted.then((accepted) => {
+          if (!siteControlScope && binding.type === "/api/query") {
+            // accepted resolves before the queued onEvent callback. Commit the
+            // canonical grant here instead of marking an ungranted Run started.
+            deps.commitAcceptedRun(binding, accepted);
+            return;
+          }
           binding.chatId = accepted.chatId;
           binding.runId = accepted.runId;
           binding.owner = accepted.owner;
