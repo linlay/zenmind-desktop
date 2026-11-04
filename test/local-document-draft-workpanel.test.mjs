@@ -15,7 +15,7 @@ const built = await build({
 });
 const module = { exports: {} };
 new Function("module", "exports", "require", built.outputFiles[0].text)(module, module.exports, require);
-const { EMPTY_WORK_PANEL_STATE, reduceWorkPanelCommand, localDocumentOwnerKey, CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL } = module.exports;
+const { EMPTY_WORK_PANEL_STATE, reduceWorkPanelCommand, isDraftWorkPanelDescriptor, localDocumentOwnerKey, CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL } = module.exports;
 
 function draft(index = 1, newChat = "1791600000001") {
   const id = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
@@ -39,15 +39,35 @@ test("draft native file tabs accept only an empty backend owner plus the exact 1
   assert.equal(open(EMPTY_WORK_PANEL_STATE, canonical(document), key).ok, false);
 });
 
+const safeDescriptors = [
+  { kind: "web", url: "https://example.test/" },
+  { kind: "webclient", module: "skill", route: "/skill-viewer/example", context: { id: "example" } },
+  { kind: "webclient", module: "file", route: "/file-viewer", context: { agentKey: "main", path: "notes.md" } },
+  { kind: "webclient", module: "reference", route: "/resource/main?chatId=upload-chat&file=report.docx", context: { agentKey: "main", chatId: "upload-chat", referenceId: "ref-1", relativePath: "report.docx" } },
+];
+const nativeHtml = (sourceKind = "workspace-file") => ({ kind: "native", surfaceKey: "document-html", context: {
+  handleId: "html-handle", sourceKind, stableIdentity: "html:main:index.html",
+  displayUrl: sourceKind === "workspace-file" ? "@workspace/index.html" : "@chat/index.html",
+  fileName: "index.html", mimeType: "text/html", sizeBytes: 1, revision: "r1", localOriginal: true,
+} });
+
 test("draft grouping never becomes a WebClient Chat route or another WorkPanel capability", () => {
   const opened = open(EMPTY_WORK_PANEL_STATE, draft());
   const ownerChatId = opened.state.ownerChatId;
   for (const descriptor of [
-    { kind: "web", url: "https://example.test" },
     { kind: "webclient", module: "overview", route: `/overview/${ownerChatId}`, context: { chatId: ownerChatId, agentKey: "main" } },
+    ...["overview", "debug", "btw", "source", "project", "file-diff", "artifact", "reference", "view", "planning", "agent", "copilot"].map(module =>
+      ({ kind: "webclient", module, route: "/viewer", context: { agentKey: "main" } })),
+    ...[ownerChatId, "real-chat"].map(chatId => ({ ...safeDescriptors[2], context: { ...safeDescriptors[2].context, chatId } })),
+    ...["runId", "artifactId", "referenceId", "planningId", "publishId", "sourceId", "btwId", "instanceId"].map(key =>
+      ({ ...safeDescriptors[2], context: { ...safeDescriptors[2].context, [key]: "chat-dependent" } })),
+    { ...safeDescriptors[1], context: { id: "example", chatId: ownerChatId } },
+    { kind: "webapp-ref", webappId: "app", title: "App" },
+    nativeHtml(), nativeHtml("artifact"), nativeHtml("reference"),
     { kind: "local-file", handleId: "other", fileName: "other.md", previewKind: "text" },
     { kind: "native", surfaceKey: "resource-image", context: {} },
   ]) {
+    assert.equal(isDraftWorkPanelDescriptor(descriptor), false, JSON.stringify(descriptor));
     const denied = reduceWorkPanelCommand(opened.nextState, { type: "openItem", ownerChatId, descriptor });
     assert.equal(denied.ok, false); assert.equal(denied.nextState, opened.nextState);
   }
@@ -94,6 +114,88 @@ test("adopt preserves a hidden draft and refuses partial or changed preview iden
   const adopted = reduceWorkPanelCommand(hidden.nextState, { type: "adoptLocalDocumentWorkspace", ownerChatId: "real-chat",
     draftOwnerKey: two.state.ownerChatId, documents: [canonical(first), canonical(second)] });
   assert.deepEqual(adopted.nextState.visibleOwnerChatIds, []); assert.equal(adopted.state.activeItemId, two.state.activeItemId);
+});
+
+test("draft previews accept only safe descriptors and never inject a backend Chat", () => {
+  const ownerChatId = localDocumentOwnerKey({ ...draft(), agentKey: "agent:中文" });
+  let state = EMPTY_WORK_PANEL_STATE;
+  for (const descriptor of safeDescriptors) {
+    assert.equal(isDraftWorkPanelDescriptor(descriptor), true);
+    const opened = reduceWorkPanelCommand(state, { type: "openItem", ownerChatId, descriptor });
+    assert.equal(opened.ok, true);
+    assert.deepEqual(opened.item.descriptor.context, descriptor.context);
+    if (descriptor.kind === "web") assert.equal(opened.item.descriptor.url, descriptor.url);
+    state = opened.nextState;
+    assert.equal(reduceWorkPanelCommand(state, { type: "openItem", ownerChatId: "file-draft:bad:123", descriptor }).ok, false);
+  }
+  assert.equal(isDraftWorkPanelDescriptor({ kind: "native", surfaceKey: "local-document", context: draft() }), true);
+  const web = state.workspaces[0].items[0];
+  const denied = reduceWorkPanelCommand(state, { type: "startReview", ownerChatId, itemId: web.itemId,
+    kind: "html", source: { sourceKind: "web", url: web.descriptor.url, fileName: "Web", revision: web.descriptor.url } });
+  assert.equal(denied.ok, false); assert.equal(denied.nextState, state);
+  assert.deepEqual(state.review, EMPTY_WORK_PANEL_STATE.review);
+});
+
+test("native HTML claims cannot enter or migrate from drafts, including workspace files", () => {
+  for (const sourceKind of ["workspace-file", "artifact", "reference"]) {
+    const descriptor = nativeHtml(sourceKind);
+    const canonicalPanel = reduceWorkPanelCommand(EMPTY_WORK_PANEL_STATE, { type: "openItem", ownerChatId: "real-chat", descriptor });
+    assert.equal(canonicalPanel.ok, true, "fixture is a valid canonical native HTML descriptor");
+    const ownerChatId = localDocumentOwnerKey(draft());
+    const state = { ...canonicalPanel.nextState, workspaces: [{ ...canonicalPanel.state, ownerChatId }] };
+    for (const type of ["adoptDraftWorkspace", "adoptLocalDocumentWorkspace"]) {
+      const denied = reduceWorkPanelCommand(state, { type, draftOwnerKey: ownerChatId, ownerChatId: "real-chat", documents: [] });
+      assert.equal(denied.ok, false); assert.equal(denied.nextState, state);
+    }
+  }
+});
+
+for (const hidden of [false, true]) for (const explicitlyOpened of [false, true]) {
+  test(`safe draft adoption retains tabs and panel intent: hidden=${hidden}, explicit=${explicitlyOpened}`, () => {
+    const draftOwnerKey = localDocumentOwnerKey(draft());
+    let state = EMPTY_WORK_PANEL_STATE;
+    for (const descriptor of safeDescriptors) {
+      state = reduceWorkPanelCommand(state, { type: "openItem", ownerChatId: draftOwnerKey, descriptor, explicitlyOpened }).nextState;
+    }
+    if (hidden) state = reduceWorkPanelCommand(state, { type: "hideWorkspace", ownerChatId: draftOwnerKey }).nextState;
+    const original = state.workspaces[0];
+    for (const ownerChatId of ["", draftOwnerKey]) {
+      const denied = reduceWorkPanelCommand(state, { type: "adoptDraftWorkspace", draftOwnerKey, ownerChatId });
+      assert.equal(denied.ok, false); assert.equal(denied.nextState, state);
+    }
+    const adopted = reduceWorkPanelCommand(state, { type: "adoptDraftWorkspace", draftOwnerKey, ownerChatId: "real-chat" });
+    assert.equal(adopted.ok, true);
+    assert.equal(adopted.workspaceId, original.workspaceId);
+    assert.equal(adopted.state.activeItemId, original.activeItemId);
+    assert.deepEqual(adopted.state.items, original.items);
+    adopted.state.items.forEach((item, index) => assert.equal(item, original.items[index]));
+    assert.deepEqual(adopted.nextState.visibleOwnerChatIds, hidden ? [] : ["real-chat"]);
+    assert.deepEqual(adopted.nextState.explicitlyOpenedOwnerChatIds, explicitlyOpened ? ["real-chat"] : []);
+    assert.equal(adopted.nextState.review, state.review);
+    const repeated = reduceWorkPanelCommand(adopted.nextState, { type: "adoptDraftWorkspace", draftOwnerKey, ownerChatId: "real-chat" });
+    assert.equal(repeated.nextState, adopted.nextState);
+  });
+}
+
+test("mixed drafts wait for trusted local document promotion and retain safe items unchanged", () => {
+  const document = draft();
+  const opened = open(EMPTY_WORK_PANEL_STATE, document);
+  let state = opened.nextState;
+  for (const descriptor of safeDescriptors) {
+    state = reduceWorkPanelCommand(state, { type: "openItem", ownerChatId: opened.state.ownerChatId, descriptor }).nextState;
+  }
+  const denied = reduceWorkPanelCommand(state, { type: "adoptDraftWorkspace", draftOwnerKey: opened.state.ownerChatId, ownerChatId: "real-chat" });
+  assert.equal(denied.ok, false); assert.equal(denied.nextState, state);
+  const overview = reduceWorkPanelCommand(state, { type: "openItem", ownerChatId: "real-chat", explicitlyOpened: true,
+    descriptor: { kind: "webclient", module: "overview", route: "/overview/real-chat", context: { chatId: "real-chat", agentKey: "main" } } });
+  const adopted = reduceWorkPanelCommand(overview.nextState, { type: "adoptLocalDocumentWorkspace", draftOwnerKey: opened.state.ownerChatId,
+    ownerChatId: "real-chat", documents: [canonical(document)] });
+  assert.equal(adopted.ok, true);
+  assert.equal(adopted.workspaceId, opened.workspaceId);
+  assert.equal(adopted.state.activeItemId, state.workspaces[0].activeItemId);
+  assert.equal(adopted.state.items[0], overview.item);
+  state.workspaces[0].items.slice(1).forEach((item, index) => assert.equal(adopted.state.items[index + 2], item));
+  assert.deepEqual(adopted.nextState.explicitlyOpenedOwnerChatIds, ["real-chat"]);
 });
 
 for (const draftExplicit of [false, true]) for (const canonicalExplicit of [false, true]) {

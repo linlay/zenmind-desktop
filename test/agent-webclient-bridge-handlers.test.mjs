@@ -1800,6 +1800,42 @@ test("physical debug traces preserve selection text and annotation in requests a
   }
 });
 
+test("draft Main Chat opens Chat-independent previews without sending a synthetic chatId", async () => {
+  const route = "/agent/agent-1?newChat=1793759598386";
+  const target = mainTarget(101, { ownerChatId: "", pageRouteIdentity: route, pageRoute: route,
+    currentUrl: `http://127.0.0.1:7079${route}` });
+  const dispatched = [];
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]), {
+    dispatchWorkPanel: async input => { dispatched.push(input); return { ok: true, workspaceId: "draft-workspace" }; },
+  });
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  const invoke = call => runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL)({ sender }, call);
+  assert.ok((await invoke({ method: "getCapabilities" })).capabilities.includes("workpanel.open"));
+  for (const descriptor of [
+    { kind: "web", url: "https://docs.test/" },
+    { kind: "webclient", module: "skill", route: "/skill?id=test-skill", context: { id: "test-skill" } },
+    { kind: "webclient", module: "file", route: "/file-viewer/agent-1?path=report.txt", context: { agentKey: "agent-1", path: "report.txt" } },
+  ]) {
+    assert.equal((await invoke({ method: "openItem", input: { version: 6, descriptor } })).ok, true);
+  }
+  assert.equal(dispatched.length, 3);
+  assert.ok(dispatched.every(input => input.ownerChatId === "" && input.draftOwnerKey === "file-draft:agent-1:1793759598386"));
+  assert.equal((await invoke({ method: "openDocument", input: { version: 6, source: { kind: "workspace-file", agentKey: "agent-1", path: "report.html" } } })).error.code, "unsupported_native_type");
+  const uploadedSource = { kind: "reference", agentKey: "agent-1", chatId: "upload-chat", resourceId: "ref-1", relativePath: "report.docx" };
+  assert.equal((await invoke({ method: "openDocument", input: { version: 6, source: uploadedSource } })).error.code, "unsupported_native_type");
+  assert.equal((await invoke({ method: "openItem", input: { version: 6, descriptor: {
+    kind: "webclient", module: "reference", route: "/resource/agent-1?chatId=upload-chat&file=report.docx",
+    context: { agentKey: "agent-1", chatId: "upload-chat", referenceId: "ref-1", relativePath: "report.docx" },
+  } } })).ok, true);
+  for (const descriptor of [
+    { kind: "webclient", module: "overview", route: "/agent/agent-1?chatId=other", context: { agentKey: "agent-1", chatId: "other" } },
+    { kind: "webclient", module: "file", route: "/file-viewer/agent-1?path=report.txt", context: { agentKey: "agent-1", path: "report.txt", chatId: "other" } },
+  ]) assert.equal((await invoke({ method: "openItem", input: { version: 6, descriptor } })).ok, false);
+  target.pageRouteIdentity = "/agent/agent-1?newChat=other";
+  assert.equal((await invoke({ method: "getCapabilities" })).ok, false);
+  runtime.registration.cleanupSender(sender.id);
+});
+
 test("document WorkPanel guests can open only websites in their registered owner Chat", async () => {
   for (const role of ["file", "artifact", "reference"]) {
     const target = childTarget(202, role, "agent-management");
@@ -1836,6 +1872,22 @@ test("document WorkPanel guests can open only websites in their registered owner
     assert.equal((await invoke({ method: "getCapabilities" })).error.code, "surface_unavailable");
     runtime.registration.cleanupSender(sender.id);
   }
+});
+
+test("draft document guests open preview websites in their draft without native privileges", async () => {
+  const target = childTarget(202, "reference", "agent-management", { ownerChatId: "", draftOwnerKey: "file-draft:agent-1:1793759598386" });
+  const dispatched = [];
+  const runtime = createRuntime(new Map([[202, target]]), { dispatchWorkPanel: async input => { dispatched.push(input); return { ok: true, workspaceId: "draft" }; } });
+  const sender = createSender(202, target.currentUrl);
+  const invoke = call => runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL)({ sender }, call);
+  const descriptor = { kind: "web", url: "https://docs.test/preview" };
+  assert.equal((await invoke({ method: "openItem", input: { version: 6, descriptor } })).ok, true);
+  assert.equal(dispatched[0].ownerChatId, "");
+  assert.equal(dispatched[0].draftOwnerKey, target.draftOwnerKey);
+  for (const method of ["openResource", "openDocument", "getDocumentOpenOptions"]) {
+    assert.equal((await invoke({ method, input: { version: 6 } })).error.code, "capability_denied");
+  }
+  runtime.registration.cleanupSender(sender.id);
 });
 
 test("other secondary surfaces do not gain document website opening privileges", async () => {

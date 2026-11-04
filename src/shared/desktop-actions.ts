@@ -434,6 +434,7 @@ export function getDesktopActionConfirmation(definition: DesktopActionDefinition
 }
 
 export interface DesktopActionSource {
+  workPanelScope?: { kind: "draft"; draftId: string };
   runId?: string;
   chatId?: string;
   agentKey?: string;

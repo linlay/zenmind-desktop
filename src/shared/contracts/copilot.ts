@@ -113,6 +113,7 @@ export interface DesktopActionRendererRequest {
   action: string;
   args: Record<string, unknown>;
   source?: {
+    workPanelScope?: { kind: "draft"; draftId: string };
     runId?: string;
     chatId?: string;
     agentKey?: string;

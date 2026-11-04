@@ -149,6 +149,7 @@ type ServiceWebviewSurfaceProps = {
   surfaceIdentity?: SurfaceIdentity;
   surfaceIdentityKey?: string;
   documentSource?: WorkPanelDocumentSource;
+  draftOwnerKey?: string;
   active?: boolean | undefined;
   surfaceOwnershipActive?: boolean;
   desktopRoute?: string;
@@ -671,6 +672,7 @@ export function ServiceWebviewSurface({
   surfaceId: surfaceIdProp,
   surfaceIdentity: surfaceIdentityProp,
   surfaceIdentityKey,
+  draftOwnerKey,
   documentSource,
   active,
   surfaceOwnershipActive,
@@ -1511,6 +1513,7 @@ export function ServiceWebviewSurface({
       ...surfaceIdentity,
       ...(resolvedSurfaceIdentityKey ? { surfaceIdentityKey: resolvedSurfaceIdentityKey } : {}),
       ...(documentSource ? { documentSource } : {}),
+      ...(draftOwnerKey ? { draftOwnerKey } : {}),
       surfaceKind: "service",
       surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceIdentity.surfaceRole),
       ...(serviceId ? { serviceId } : {}),
@@ -1747,6 +1750,7 @@ export function ServiceWebviewSurface({
     surfaceId,
     surfaceIdentity.interaction,
     surfaceIdentity.ownerChatId,
+    draftOwnerKey,
     surfaceIdentity.parentSurfaceId,
     surfaceIdentity.surfaceId,
     surfaceIdentity.surfaceLevel,

@@ -16,6 +16,7 @@ function loadSharedSource(name) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
   } });
   vm.runInNewContext(outputText, {
+    __DESKTOP_APP_BRAND__: { id: "zenmind", protocols: { open: { scheme: "zenmind" } }, storageNamespace: "zenmind", paths: { runtimeRootDirName: ".zenmind" }, installer: { shutdownArg: "--shutdown" } },
     exports: module.exports, module, URL, URLSearchParams,
     require: id => loadSharedSource(id.replace(/^\.\//u, "")),
   });
@@ -67,7 +68,8 @@ function loadHost(onProvider = () => {}, stateful = false, electronAPI = {}) {
       if (id.endsWith("/useI18n")) return { useI18n: () => ({ t: (key) => key }) };
       if (id.endsWith("/agent-webclient-routes")) return loadSharedSource("agent-webclient-routes");
       if (id.endsWith("/new-tab-selection")) return loadSharedSource("../renderer/work-panel/new-tab-selection");
-      if (id.endsWith("/work-panel")) return { isLocalDocumentDraftOwnerKey: (value) => /^file-draft:[^:]+:[1-9]\d{12}$/u.test(value) };
+      if (id.endsWith("/work-panel")) return loadSharedSource("work-panel");
+      if (id.endsWith("/surface-identity")) return loadSharedSource("surface-identity");
       if (id.endsWith("/desktopActionRegistry")) return { registerDesktopActionProviderForScope: (_scope, provider) => { onProvider(provider); return noop; } };
       return stubs;
     },
@@ -201,6 +203,23 @@ for (const isMac of [true, false]) {
     assert.deepEqual(mountedItems("a", "overview", isMac), ["overview", "file"]);
     assert.deepEqual(mountedItems("a", "debug", isMac), ["debug", "file"]);
     assert.deepEqual(mountedItems("a", "file", isMac), ["file"]);
+  });
+
+  for (const descriptor of [
+    { kind: "webclient", module: "skill", route: "/skill?id=test", context: { id: "test" } },
+    { kind: "webclient", module: "reference", route: "/resource/main?chatId=upload-chat&file=report.docx", context: { agentKey: "main", chatId: "upload-chat", referenceId: "ref-1", relativePath: "report.docx" } },
+  ]) test(`${isMac ? "macOS" : "Windows"}: draft ${descriptor.module} mounts its content without a synthetic Chat owner`, () => {
+    const ownerKey = "file-draft:main:1791600000001";
+    const tree = Host({ activeChatId: null, activeOwnerKey: ownerKey, isMac, isWindows: !isMac, fullscreenOwnerChatId: null,
+      state: { workspaces: [{ workspaceId: "draft", ownerChatId: ownerKey, activeItemId: "skill", items: [
+        { itemId: "skill", stableKey: "skill:test", title: "Skill", descriptor },
+      ] }], review: { activeItemIdsByOwnerChatId: {} } },
+      launcher: { webapps: [] }, dispatchCommand: () => {}, onFullscreenChange: async () => true });
+    assert.equal(findNodes(tree, node => node.props["data-work-panel-item"] === "skill").length, 1);
+    const surface = findNodes(tree, node => node.props.serviceId === "agent-webclient")[0];
+    assert.ok(surface);
+    assert.equal(surface.props.ownerChatId, undefined);
+    assert.equal(surface.props.surfaceIdentity?.ownerChatId, undefined);
   });
 
   test(`${isMac ? "macOS" : "Windows"}: file draft displays native previews without mounting backend Chat observers`, () => {

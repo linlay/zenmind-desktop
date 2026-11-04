@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
-import { EMPTY_WORK_PANEL_STATE, reduceWorkPanelCommand } from "../dist-electron/shared/work-panel.js";
+import { EMPTY_WORK_PANEL_STATE, isLocalDocumentDraftOwnerKey, reduceWorkPanelCommand } from "../dist-electron/shared/work-panel.js";
 import * as workPanelSurface from "../dist-electron/shared/work-panel-surface.js";
 
 const require = createRequire(import.meta.url);
@@ -45,6 +45,7 @@ function harness({ existing = false, loading = true, close = false, timeout = fa
       committed = result.nextState;
       return result;
     },
+    isLocalDocumentDraftOwnerKey,
     normalizeWorkPanelWebUrl: (url) => new URL(url).href,
     createAgentWebclientOverviewPath: () => "/overview",
     t: (key) => key,
@@ -70,6 +71,7 @@ function harness({ existing = false, loading = true, close = false, timeout = fa
   });
   vm.runInContext(`${outputText}\nglobalThis.invoke = provider;`, context);
   return {
+    invokeRequest: request => context.invoke(request),
     invoke: () => context.invoke({ action: "desktop.workpanel.openWeb",
       source: { chatId: "chat-a", agentKey: "agent-a" }, args: { url: "https://www.google.com/" } }),
     dispatches,
@@ -77,6 +79,17 @@ function harness({ existing = false, loading = true, close = false, timeout = fa
     webItems: () => committed.workspaces.flatMap((workspace) => workspace.items.filter((item) => item.descriptor.kind === "web")),
   };
 }
+
+test("draft openTab creates a workspace without a Chat-backed overview", async () => {
+  const { invokeRequest, dispatches } = harness();
+  const result = await invokeRequest({ action: "desktop.workpanel.openTab",
+    source: { workPanelScope: { kind: "draft", draftId: "file-draft:agent-a:1793759598386" } },
+    args: { descriptor: { kind: "web", url: "https://www.google.com/" } } });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.result.state.ownerChatId, "file-draft:agent-a:1793759598386");
+  assert.deepEqual(dispatches.map(command => command.type), ["openItem"]);
+  assert.equal(result.result.state.items.length, 1);
+});
 
 test("opening in a new workspace survives delayed React state and controller registration", async () => {
   const { invoke } = harness();

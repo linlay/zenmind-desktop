@@ -151,11 +151,12 @@ export function registerPlatformFrameIpc(options: MainIpcRegistrationOptions) {
       cancel: options.cancelLocalDocumentDraftPromotion,
       promote: options.promoteLocalDocumentDraft,
     }),
-    dispatchWorkPanel: async ({ action, ownerChatId, args }) => {
+    dispatchWorkPanel: async ({ action, ownerChatId, draftOwnerKey, args }) => {
       const response = await handleAgentWebclientWorkPanelActionRequest(desktopActionOptions, {
         requestId: `workpanel-bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         action,
         ownerChatId,
+        ...(draftOwnerKey ? { draftOwnerKey } : {}),
         args,
       });
       if (response.ok) {

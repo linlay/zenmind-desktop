@@ -471,6 +471,9 @@ export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(f
               aria-label={t("chatWorkPanel.review.requirementPlaceholder")}
               placeholder={t("chatWorkPanel.review.requirementPlaceholder")}
               onChange={(event) => setPendingNote(event.target.value)}
+              style={{
+                marginBottom: 12
+              }}
               onPressEnter={(event) => {
                 if ((event.metaKey || event.ctrlKey) && pendingNote.trim()) confirmPendingAnnotation();
               }}

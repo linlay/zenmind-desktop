@@ -39,6 +39,7 @@ import type {
 } from "../../shared/work-panel";
 import {
   isLocalDocumentDraftOwnerKey,
+  isDraftWorkPanelDescriptor,
   normalizeWorkPanelWebUrl,
 } from "../../shared/work-panel";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../shared/sso";
@@ -2335,8 +2336,9 @@ export function WorkPanelHost({
     () =>
       registerDesktopActionProviderForScope("global", async (request) => {
         if (!request.action.startsWith("desktop.workpanel.")) return null;
-        const ownerChatId = request.source?.chatId?.trim() || "";
-        if (!ownerChatId || ownerChatId.startsWith("file-draft:"))
+        const draftId = request.source?.workPanelScope?.kind === "draft" ? request.source.workPanelScope.draftId : "";
+        const ownerChatId = draftId || request.source?.chatId?.trim() || "";
+        if (!ownerChatId || (ownerChatId.startsWith("file-draft:") && (!draftId || !isLocalDocumentDraftOwnerKey(draftId))))
           return actionError(
             "source_chat_required",
             "A trusted canonical source.chatId is required.",
@@ -2468,7 +2470,7 @@ export function WorkPanelHost({
             : { ok: false as const, error: publicResult.error };
         };
         const ensureTrustedWorkspace = () => {
-          if (current()) return null;
+          if (current() || draftId) return null;
           if (!ownerAgentKey) {
             return actionError(
               "source_owner_required",
@@ -3285,10 +3287,11 @@ export function WorkPanelHost({
                     !mainChatActive &&
                     !newTabActive &&
                     workspace.activeItemId === item.itemId;
+                  const draftWorkspace = isLocalDocumentDraftOwnerKey(workspace.ownerChatId);
                   if (
                     item.descriptor.kind === "webclient" &&
-                    (isLocalDocumentDraftOwnerKey(workspace.ownerChatId) ||
-                      (visible && !activeChatId))
+                    ((draftWorkspace && !isDraftWorkPanelDescriptor(item.descriptor)) ||
+                      (!draftWorkspace && visible && !activeChatId))
                   )
                     return null;
                   // Read-only observers belong to the visible, committed Main Chat.
@@ -3487,7 +3490,8 @@ export function WorkPanelHost({
                         <ServiceWebviewSurface
                           active={active}
                           embedPath={item.descriptor.route}
-                          documentSource={documentSourceFromWebclientDescriptor(
+                          draftOwnerKey={draftWorkspace ? workspace.ownerChatId : undefined}
+                          documentSource={draftWorkspace ? undefined : documentSourceFromWebclientDescriptor(
                             item.descriptor,
                           )}
                           hostTheme={
@@ -3496,7 +3500,7 @@ export function WorkPanelHost({
                               : "light"
                           }
                           loadInitialEmbeddedUrlDirectly
-                          ownerChatId={workspace.ownerChatId}
+                          ownerChatId={draftWorkspace ? undefined : workspace.ownerChatId}
                           onAgentWebclientCurrentResourceAction={
                             supportsLocalResourceActions
                               ? (action, resource) =>
@@ -3554,7 +3558,7 @@ export function WorkPanelHost({
                           surfaceIdentity={createChatChildSurfaceIdentity(
                             item.descriptor.module,
                             item.stableKey,
-                            workspace.ownerChatId,
+                            draftWorkspace ? "" : workspace.ownerChatId,
                           )}
                           surfaceIdentityKey={item.stableKey}
                           surfaceLabel={item.title}
