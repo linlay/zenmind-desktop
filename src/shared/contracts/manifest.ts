@@ -297,7 +297,6 @@ export const DEFAULT_AGENT_WEBCLIENT_RUNTIME_CONFIG_ENV_KEYS = [
   "CONVERSATION_EXPORT_ASSET_ORIGIN",
   "BRAND_ID",
   "VOICE_ENABLED",
-  "DICTATION_ENABLED",
 ];
 
 export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
@@ -331,16 +330,6 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
     "/registries"
   ],
   proxyRoutes: [
-    {
-      match: "exact", path: "/api/dictation/capabilities", targetEnv: "DICTATION_BASE_URL",
-      http: true, websocket: false, optional: true, auth: "agent-platform-access-token",
-      disabledResponse: { status: 503, json: { code: 503, msg: "dictation unavailable" } },
-    },
-    {
-      match: "exact", path: "/api/dictation/ws", targetEnv: "DICTATION_BASE_URL",
-      http: false, websocket: true, optional: true, auth: "agent-platform-access-token",
-      stripRequestHeaders: ["sec-websocket-extensions"],
-    },
     {
       match: "exact",
       path: "/api/voice/ws",

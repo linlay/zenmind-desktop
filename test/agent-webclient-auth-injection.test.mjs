@@ -30,4 +30,6 @@ test("Desktop host injects HTTP auth and hard-blocks legacy realtime bypasses", 
   assert.match(host, /authorization/u);
   assert.match(host, /desktop_realtime_bridge_required/u);
   assert.match(host, /DESKTOP_BRIDGE_ONLY_HTTP_PATHS/u);
+  // Only the exact same-origin media upgrade passes; other voice paths stay blocked.
+  assert.match(host, /requestPath !== "\/api\/voice\/ws" \|\| req\.url !== "\/api\/voice\/ws" \|\| req\.headers\.origin !== /u);
 });

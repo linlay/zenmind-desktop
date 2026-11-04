@@ -41,7 +41,7 @@ export async function collectServiceVerification(
 
   if (desired === "running" && state.status === "running" && state.healthMeta.webUrl) {
     const webUrl = state.healthMeta.webUrl;
-    if (service.id === "agent-container-hub" || service.id === "agent-platform" || service.id === "agent-dictation") {
+    if (service.id === "agent-container-hub" || service.id === "agent-platform") {
       probes.push(await probeServiceHealth(normalizeProbeUrl(webUrl, "/healthz")));
     } else {
       probes.push(await runStartupCheckpoint(serviceId, "verification", "http-service-root", () => probeHttpUrl(webUrl)));

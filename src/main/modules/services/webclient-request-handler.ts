@@ -16,18 +16,11 @@ import { type Socket } from "node:net";
 import { writeWebSocketProxyError, proxyWebSocketUpgrade } from "./webclient-websocket-proxy";
 
 export async function handleHttpRequest(record: AgentWebclientHostRecord, req: http.IncomingMessage, res: http.ServerResponse) {
-  const requestPath = parseRequestPath(req.url);
-  if (requestPath.startsWith("/api/dictation/")) {
-    if (req.url !== "/api/dictation/capabilities" || req.method !== "GET" ||
-        (req.headers.origin && req.headers.origin !== new URL(record.webUrl).origin) || req.headers["sec-fetch-site"] === "cross-site") {
-      writeJSON(res, 403, { code: 403, msg: "invalid dictation request" });
-      return;
-    }
-  }
   if (applyDevCors(req, res)) {
     return;
   }
 
+  const requestPath = parseRequestPath(req.url);
   if (isDesktopBridgeOnlyHttpPath(requestPath)) {
     writeJSON(res, 404, {
       error: "desktop_realtime_bridge_required",
@@ -57,7 +50,6 @@ export async function handleHttpRequest(record: AgentWebclientHostRecord, req: h
       writeMissingTargetHttpResponse(record, req, res, proxyRoute);
       return;
     }
-    if (requestPath.startsWith("/api/dictation/") && req.headers.origin) req.headers.origin = target.origin;
     await proxyHttpRequest(record, req, res, proxyRoute, target);
     return;
   }
@@ -84,7 +76,7 @@ export async function handleUpgrade(
   head: Buffer
 ) {
   const requestPath = parseRequestPath(req.url);
-  if (!["/api/voice/ws", "/api/dictation/ws"].includes(requestPath) || req.url !== requestPath || req.headers.origin !== new URL(record.webUrl).origin) {
+  if (requestPath !== "/api/voice/ws" || req.url !== "/api/voice/ws" || req.headers.origin !== new URL(record.webUrl).origin) {
     writeDisabledWebSocketUpgrade(socket, {
       status: 404,
       json: { error: "desktop_realtime_bridge_required" },
