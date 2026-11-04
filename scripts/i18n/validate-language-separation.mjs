@@ -51,6 +51,9 @@ const allowedLatinTerms = [
   /Cookie/g,
   /\b[Bb]earer\b/g,
   /Google/g,
+  /Chrome/g,
+  /Playwright/g,
+  /Allow & select/g, // Exact label on the official extension's approval page.
   /Kanban/g,
   /App/g,
   /Action/g,

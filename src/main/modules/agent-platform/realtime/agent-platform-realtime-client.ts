@@ -254,7 +254,7 @@ export class AgentPlatformRealtimeClient {
     onStaleFrame?(): void;
     onState?(state: AgentPlatformRealtimeConnectionState): void;
     onDiagnostic?(message: string): void;
-    onTrace?(direction: "in" | "out", frame: AgentPlatformRealtimeFrame): void;
+    onTrace?(direction: "in" | "out", frame: AgentPlatformRealtimeFrame, browserFileTransfer?: boolean): void;
   }) {
     this.unsubscribeLocale = subscribeMainLocale(() => this.syncLocale());
   }
@@ -337,7 +337,7 @@ export class AgentPlatformRealtimeClient {
     return this.open(false);
   }
 
-  send(frame: AgentPlatformRealtimeFrame) {
+  send(frame: AgentPlatformRealtimeFrame, browserFileTransfer = false) {
     const socket = this.socket;
     if (!socket || this.state.phase !== "connected") {
       throw new Error("connection_unavailable: Agent Platform realtime connection is not open");
@@ -345,12 +345,13 @@ export class AgentPlatformRealtimeClient {
     // Wait for the connection setting acknowledgement before sending later business requests.
     if (this.localeSync && frame.frame === "request" && frame.type !== "/api/locale") {
       void this.localeSync.then(() => {
-        if (this.socket === socket && this.state.phase === "connected") this.send(frame);
+        if (this.socket === socket && this.state.phase === "connected") this.send(frame, browserFileTransfer);
       }).catch(() => {}); // The sync failure closes the connection and fails pending requests.
       return;
     }
     socket.send(JSON.stringify(frame));
-    this.options.onTrace?.("out", frame);
+    // Local diagnostic scope never becomes a wire field.
+    this.options.onTrace?.("out", frame, browserFileTransfer);
   }
 
   rotateIdentity() {

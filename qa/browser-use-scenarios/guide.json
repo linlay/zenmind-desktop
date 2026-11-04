@@ -1,0 +1,41 @@
+{
+  "scope": "Local Chrome-only sandbox; no production source or user profile changes",
+  "start": "node qa/browser-use-scenarios/server.mjs",
+  "verify": "node qa/browser-use-scenarios/verify.mjs --run-dir <exact generated run directory>",
+  "verifySpecifiedRun": "node qa/browser-use-scenarios/verify.mjs --run-dir <run> --chat-jsonl <one exact Chat JSONL> --chat-id <chat UUID> --run-id <one Run ID> --output <run>/reports/final.json",
+  "aggregateExplicitRuns": "node qa/browser-use-scenarios/aggregate.mjs --run-dir <formal run directory> --mapping <explicit mapping JSON> --output <formal run directory>/reports/scenarios-aggregate.json",
+  "aggregateMapping": {
+    "example": "qa/browser-use-scenarios/mapping.example.json",
+    "selection": "schemaVersion=1; top-level absolute chatJsonl and chatId supply explicit defaults; runs entries require runId/scenario and optional phase. A per-entry chatJsonl/chatId override may name another explicitly approved Chat. No directory scanning or automatic Run discovery.",
+    "snapshots": "One immutable read per named Chat per aggregate run. Seed and all unmapped Runs are excluded. Missing Runs or duplicate mappings fail rather than silently widening selection.",
+    "timing": "completionEvidence distinguishes a persisted final assistant text from an incomplete stored span. A successful tool followed by a slow model response is not automatically a browser failure; an in-progress wallMs is not completed end-to-end latency.",
+    "modelRoute": "Optional evaluationContext={modelRouteLabel,source:coordinator_ui,alternateRoute:true,performanceComparisonAllowed:false} labels a fallback route and disables baseline deltas. Persisted modelKeys are taken only from each explicitly selected Run; seeds are excluded.",
+    "review": "Each scenario retains pending manualReview checks. Optional mapping.reviews[scenario]={status:pending|pass|fail,reviewedBy:<identifier>,reasonCodes:[<identifier>],runIds:[<explicitly mapped run>]} persists an explicit assessment across regenerations; it never auto-approves all cases. Current business state is not retroactively attributed to an earlier Run. Only procurement is compared with the 112 tools/177.740s baseline, subject to manual correctness review.",
+    "output": "Only the formal run reports/ directory; output JSON mode 600; no raw prompts, reasoning, results, file bytes or verifier token."
+  },
+  "componentSelfcheck": "BROWSER_USE_TEST_CHROME='<isolated Chrome-for-Testing executable>' node qa/browser-use-scenarios/selfcheck.mjs",
+  "isolation": [
+    "Each launch creates a new dataset in runs/, ignored by Git. Component selfcheck creates a separate selfcheck-* dataset.",
+    "Both HTTP servers bind 127.0.0.1 on random ports. The second origin is only for cross-origin iframe coverage.",
+    "manifest.json and private.json are mode 600, run directory mode 700; never include verifier token or synthetic markers in a model prompt.",
+    "No reset endpoint. Preserve a failed dataset and launch a fresh server for a clean retry. Do not stop unrelated services.",
+    "No browser is opened by the server or verifier. Selfcheck launches only a fresh temporary browser context, never the user's Chrome profile."
+  ],
+  "dispatch": [
+    "Read tasks.json as operator. Dispatch scenarios individually through real CuteJ using the normal authorized Chrome connection.",
+    "Use only the fixture URLs. Do not inspect the Chrome Welcome page or list unrelated user tabs.",
+    "For files, operator attaches the two generated fictional files to the current Chat and replaces referenceName placeholders before dispatch. Upload tools take Chat references, not filesystem paths.",
+    "For handoff, the model requests a human and stops. Only the operator may click the operator-only button, followed by a normal new Run in the same Chat.",
+    "For resume, stop or take over the active Run from normal Desktop UI, reconnect the preserved sandbox tab normally, and dispatch followupPrompt in the same Chat.",
+    "Native dialogs, old tab identities, actual download completion, cancellation, redaction and observation budgets need Chat/host evidence in addition to server business checks.",
+    "The long-page task uses surface_observe viewportOnly=true with maxTextLength=1200/maxElements=8, then each surface_scroll's fresh viewport observation. Do not repeatedly read a full-page tree truncated before the current viewport."
+  ],
+  "procurement": {
+    "goal": "Same 13-check procurement complexity with a new independent dataset and different price/shipping ranking",
+    "baseline": {"toolCalls": 112, "wallMs": 177740},
+    "measurement": "Compare only after business correctness and single submission pass. Count unique Run/seq usages, not cumulative snapshots. Component tests do not establish model efficiency."
+  },
+  "files": {"initialFormats": ["txt", "csv"], "pdf": "Not included in this initial fixture; do not claim PDF acceptance", "downloadBoundary": "The server proves an attachment response was served. A real surface_downloads save result must prove persistent Chat artifact creation."},
+  "platforms": {"server": "Uses portable Node core APIs, path.join and loopback sockets on macOS/Windows", "browserSelfcheck": "Requires explicit BROWSER_USE_TEST_CHROME executable; no implicit user Chrome fallback", "actualWindowsAcceptance": "Must run separately on Windows; macOS fixture evidence is insufficient"},
+  "acceptanceRule": "Only a real CuteJ model Run with specified Chat evidence counts as model acceptance. A component selfcheck pass is labelled component evidence."
+}

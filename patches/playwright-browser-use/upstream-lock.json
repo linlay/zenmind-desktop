@@ -1,0 +1,20 @@
+{
+  "upstream": "Microsoft Playwright",
+  "license": "Apache-2.0",
+  "coreGitHead": "cfe490d941f992655948eee8fd4fd94e1c4234bf",
+  "coreBundleSha256": "829521b67ed7be90c7d6d6098ff39f2241562d47e4ad7ccab13710924a56001d",
+  "packages": {
+    "playwright-core": {
+      "version": "1.64.1",
+      "tarball": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.64.1.tgz",
+      "integrity": "sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ=="
+    }
+  },
+  "extension": {
+    "sourceVersion": "0.4.0",
+    "relayProtocol": 2,
+    "id": "mmlmfjhmonkocbjadbfplnigmagldckm",
+    "storeDownloadUrl": "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=155.0.0.0&acceptformat=crx3&x=id%3Dmmlmfjhmonkocbjadbfplnigmagldckm%26installsource%3Dondemand%26uc",
+    "storeCrxSha256": "e012b45f6170f627d275588ca1a37dffe5919c2635bbac512f11b74930e63835"
+  }
+}

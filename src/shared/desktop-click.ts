@@ -11,6 +11,8 @@ export type DesktopClickParams = {
   y?: number;
   waitFor?: DesktopClickWait;
   timeoutMs?: number;
+  /** Opt in to importing the first attachment download caused by this click. */
+  captureDownload?: boolean;
 };
 export type DesktopClickResult = {
   status: "clicked" | "condition_met" | "timeout" | "canceled" | "failed" | "navigation";

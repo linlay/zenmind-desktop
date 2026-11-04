@@ -13,6 +13,15 @@ export const DESKTOP_CDP_PUBLIC_METHODS = [
   "Surface.goBack",
   "Surface.open",
   "Surface.close",
+  "Surface.openChrome",
+  "Surface.observe",
+  "Surface.click",
+  "Surface.interact",
+  "Surface.scroll",
+  "Surface.handleDialog",
+  "Surface.uploadFiles",
+  "Surface.getDownloads",
+  "Surface.readDownload",
   "Surface.setViewport",
   "Page.bringToFront",
   "Page.enable",
@@ -32,6 +41,9 @@ export const DESKTOP_CDP_PUBLIC_METHODS = [
   "Network.enable",
   "Network.disable"
 ] as const;
+
+/** Private acknowledgements; never accepted by public CDP/HTTP/WebSocket callers. */
+export const DESKTOP_CDP_HOST_METHODS = ["Surface.releaseDownload"] as const;
 
 export type DesktopCdpPublicMethod = typeof DESKTOP_CDP_PUBLIC_METHODS[number];
 

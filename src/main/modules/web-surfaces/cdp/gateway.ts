@@ -13,13 +13,18 @@ import {
   WORK_PANEL_WEB_CAPABILITIES,
 } from "../../../../shared/work-panel-surface";
 import { withSiteCdpFocus } from "./site-focus";
+import { SurfaceObservationRegistry } from "./observation";
+import type { SurfaceObserveParams, SurfaceClickParams, SurfaceInteractParams, SurfaceScrollParams } from "./observation-params";
+import { WorkPanelPageAutomation } from "./page-automation";
+import { executePageAutomationCommand, PAGE_AUTOMATION_METHODS } from "./page-automation-commands";
 import crypto from "node:crypto";
 import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
-import type { WebContents } from "electron";
+import type { IpcMain, WebContents } from "electron";
 import {
   EMBEDDED_CDP_GATEWAY_HOST,
-  EMBEDDED_CDP_GATEWAY_PORT
+  EMBEDDED_CDP_GATEWAY_PORT,
+  DESKTOP_CDP_HOST_METHODS,
 } from "../../../../shared/embedded-cdp";
 import { PRODUCT_NAME } from "../../../../shared/brand";
 
@@ -45,6 +50,7 @@ type EmbeddedCdpGatewayOptions = {
   version?: string;
   commandTimeoutMs?: number;
   logger?: Pick<Console, "debug" | "warn">;
+  dialogIpc?: Pick<IpcMain, "on">;
 };
 
 type CdpCommand = {
@@ -78,8 +84,18 @@ export type EmbeddedCdpCommandRequest = {
   source?: { chatId?: string };
 };
 
+const hostCommands = new WeakSet<EmbeddedCdpCommandRequest>();
+/** Main-only, single-use acknowledgement marker; JSON/source fields cannot issue it. */
+export function authorizeDesktopHostCdpCommand(request: EmbeddedCdpCommandRequest): EmbeddedCdpCommandRequest {
+  if (!DESKTOP_CDP_HOST_METHODS.some(method => method === request.method)) throw new EmbeddedCdpCapabilityError("This is not a host acknowledgement.");
+  hostCommands.add(request);
+  return request;
+}
+
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const DEFAULT_PROTOCOL_VERSION = "1.3";
+// These read or resolve a pending native modal; every other page command waits until it is handled.
+const modalFreeMethods = new Set(["Surface.observe", "Surface.handleDialog", "Surface.uploadFiles", "Surface.getDownloads", "Surface.readDownload", "Surface.releaseDownload"]);
 const DEFAULT_CDP_TIMEOUT_MS = 15_000;
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 export class EmbeddedCdpInvalidArgsError extends Error {
@@ -352,8 +368,11 @@ export class EmbeddedCdpGateway {
   private readonly version: string;
   private server: http.Server | null = null;
   private readonly sessions = new Map<CdpWebSocketConnection, CdpConnectionSession>();
+  private readonly pageAutomation: WorkPanelPageAutomation;
+  private readonly observations = new SurfaceObservationRegistry((contents) => this.pageAutomation.modalState(contents));
 
   constructor(private readonly options: EmbeddedCdpGatewayOptions) {
+    this.pageAutomation = new WorkPanelPageAutomation(options.logger, options.dialogIpc);
     this.host = options.host ?? EMBEDDED_CDP_GATEWAY_HOST;
     this.port = options.port ?? EMBEDDED_CDP_GATEWAY_PORT;
     this.version = options.version ?? `${PRODUCT_NAME} Embedded Chromium`;
@@ -389,6 +408,8 @@ export class EmbeddedCdpGateway {
   }
 
   stop() {
+    this.observations.dispose();
+    this.pageAutomation.dispose();
     for (const connection of [...this.sessions.keys()]) {
       connection.close();
     }
@@ -446,6 +467,8 @@ export class EmbeddedCdpGateway {
     if (!method) {
       throw new Error("method is required");
     }
+    const hostOnly = DESKTOP_CDP_HOST_METHODS.some(candidate => candidate === method);
+    if (hostOnly && !hostCommands.delete(request)) throw new EmbeddedCdpCapabilityError("This acknowledgement requires a trusted host request.");
     const params = request.params ?? {};
     if (method === "Surface.list" || method === "Surface.getCurrent") {
       validateDesktopCdpParams(method, request.params);
@@ -506,7 +529,9 @@ export class EmbeddedCdpGateway {
     const ownedScope = !scope && surface.surfaceKind === "chat-work-panel" && request.source?.chatId
       ? this.options.acquireWorkPanelScope?.(surface.id, request.source.chatId) : undefined;
     scope ??= ownedScope;
-    try { return await withCdpCommandQueue(tab.webContentsId, () => withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
+    try {
+      if (hostOnly && !scope) throw new EmbeddedCdpCapabilityError("This acknowledgement requires an authorized page scope.");
+      return await withCdpCommandQueue(tab.webContentsId, () => withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
       ? (phase) => this.options.controlSiteFocus!(surface, tab, scope, phase) : undefined, async () => {
       const live = await this.resolveCommandTarget(request, scope);
       if (live.tab.webContentsId !== tab.webContentsId || live.surface.targetGeneration !== surface.targetGeneration) {
@@ -539,13 +564,13 @@ export class EmbeddedCdpGateway {
           result: { success: true }
         };
       }
-      const result = await this.handleWebContentsCommandOnce(surface, tab, surfaceId, method, params, scope, signal);
+      const result = await this.handleWebContentsCommandOnce(surface, tab, surfaceId, method, params, scope, signal, ownedScope === scope);
       return {
         surfaceId,
         containerId: surface.id,
         result
       };
-    })); } finally { ownedScope?.release(); }
+    })); } finally { if (ownedScope && !this.pageAutomation.retainsScope(ownedScope)) ownedScope.release(); }
   }
 
   private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -649,6 +674,7 @@ export class EmbeddedCdpGateway {
       return;
     }
     try {
+      if (DESKTOP_CDP_HOST_METHODS.some(candidate => candidate === method)) throw new EmbeddedCdpCapabilityError("Host acknowledgements are not exposed over WebSocket.");
       validateDesktopCdpParams(method, command.params);
       if (method === "Surface.close") {
         const paramsSurfaceId = typeof command.params?.surfaceId === "string"
@@ -664,7 +690,7 @@ export class EmbeddedCdpGateway {
       }
       const target = await this.resolveCommandTarget({ method, surfaceId });
       assertPageAutomationNotHeld(target.tab.webContentsId);
-      const result = await withCdpCommandQueue(target.tab.webContentsId, () => method === "Input.click"
+      const result = await withCdpCommandQueue(target.tab.webContentsId, () => method === "Input.click" || ["Surface.observe", "Surface.click", "Surface.interact", "Surface.scroll"].includes(method)
         ? this.handleWebContentsCommandOnce(target.surface, target.tab, surfaceId, method, command.params ?? {})
         : this.handleWebContentsCommand(connection, target, method, command.params ?? {}));
       connection.sendJSON({ id, result });
@@ -728,7 +754,9 @@ export class EmbeddedCdpGateway {
       return this.reloadWebContents(target.surface, target.surfaceId, contents, params);
     }
     if (method === "Surface.setViewport") {
-      return setWebContentsViewport(contents, params);
+      const result = setWebContentsViewport(contents, params);
+      this.observations.invalidate(contents);
+      return result;
     }
     const session = this.ensureDebuggerSession(connection, target.surfaceId, contents);
     return sendDesktopCdpCommand(session.debuggerRef, method, params, this.buildCommandDebugContext(target.surface, target.surfaceId, contents));
@@ -741,16 +769,28 @@ export class EmbeddedCdpGateway {
     method: string,
     params: Record<string, unknown>,
     scope?: SiteControlScope,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    ownsScope = false
   ) {
     const contents = await this.ensureWebContents(surface, tab);
     if (!contents || contents.isDestroyed()) {
       throw new Error("Embedded webContents target is unavailable.");
     }
+    if (signal?.aborted) throw new Error("canceled");
     scope?.validateTab(tab);
-    if (scope && method.startsWith("Input.")) {
+    if (scope && (method.startsWith("Input.") || method === "Surface.click" || method === "Surface.interact" || method === "Surface.scroll")) {
       await this.options.controlSiteFocus?.(surface, tab, scope, "input");
       scope.validateTab(tab);
+      if (signal?.aborted) throw new Error("canceled");
+    }
+    // WorkPanel guests keep a modal-aware debugger session while the agent operates them.
+    const automation = surface.surfaceKind === "chat-work-panel" ? this.pageAutomation : undefined;
+    if (automation) {
+      await automation.prepare(contents);
+      const pending = modalFreeMethods.has(method) ? undefined : automation.pendingModal(contents);
+      if (pending) throw pending;
+    } else if (PAGE_AUTOMATION_METHODS.has(method)) {
+      throw Object.assign(new Error("Dialogs, uploads and downloads are available for WorkPanel and Chrome pages."), { code: "capability_unavailable" });
     }
     if (method === "Page.bringToFront") {
       await this.options.activateTarget?.(surface, tab, scope);
@@ -760,19 +800,25 @@ export class EmbeddedCdpGateway {
       return this.reloadWebContents(surface, surfaceId, contents, params);
     }
     if (method === "Surface.setViewport") {
-      return setWebContentsViewport(contents, params);
+      const result = setWebContentsViewport(contents, params);
+      this.observations.invalidate(contents);
+      return result;
     }
     const debuggerRef = contents.debugger;
     const ownsAttach = !debuggerRef.isAttached();
     if (ownsAttach) {
       debuggerRef.attach(DEFAULT_PROTOCOL_VERSION);
     }
-    const emulateFocus = Boolean(scope);
-    const debugContext = this.buildCommandDebugContext(surface, surfaceId, contents);
+    const emulateFocus = Boolean(scope) && (method.startsWith("Input.") || method === "Surface.click" || method === "Surface.interact" || method === "Surface.scroll");
+    let releaseFocus: (() => Promise<void>) | undefined;
+    const input = (emulateFocus || method === "Surface.uploadFiles") && automation && scope ? automation.beginInput(contents, scope, tab, signal, ownsScope) : undefined;
+    const debugContext = { ...this.buildCommandDebugContext(surface, surfaceId, contents), ...(input ? { trackCommand: input.track } : {}) };
     try {
       if (emulateFocus) {
         // Chromium ignores input in an unfocused guest. Emulation does not focus the host window.
-        await sendDesktopCdpCommand(debuggerRef, "Emulation.setFocusEmulationEnabled", { enabled: true }, debugContext);
+        const setFocus = (enabled: boolean) => sendDesktopCdpCommand(debuggerRef, "Emulation.setFocusEmulationEnabled", { enabled }, debugContext);
+        if (automation) releaseFocus = await automation.acquireFocus(contents, setFocus);
+        else await setFocus(true);
         scope?.validateTab(tab);
       }
       if (method === "Surface.goBack") {
@@ -781,24 +827,71 @@ export class EmbeddedCdpGateway {
         if (!previous) throw new EmbeddedCdpInvalidArgsError("The page has no previous history entry.");
         return await sendDesktopCdpCommand(debuggerRef, "Page.navigateToHistoryEntry", { entryId: previous.id }, debugContext);
       }
-      if (method === "Input.click") {
-        return await executeClick(params as DesktopClickParams, contents,
-          (name, args, timeoutMs) => sendDesktopCdpCommand(debuggerRef, name, args, { ...debugContext, timeoutMs }),
-          async () => {
-            scope?.validateTab(tab);
-            const current = await this.resolveCommandTarget({ method, surfaceId, source: { chatId: surface.ownerChatId } }, scope);
-            if (current.tab.webContentsId !== contents.id) throw new Error("target_replaced");
-          }, signal);
+      const validate = async () => {
+        scope?.validateTab(tab);
+        const current = await this.resolveCommandTarget({ method, surfaceId, source: { chatId: surface.ownerChatId } }, scope);
+        if (current.tab.webContentsId !== contents.id || current.surface.targetGeneration !== surface.targetGeneration) throw new Error("target_replaced");
+      };
+      const send = async (name: string, args: Record<string, unknown>, timeoutMs: number) => {
+        if (automation && params.captureDownload === true && (method === "Surface.click" || method === "Input.click")
+          && name === "Input.dispatchMouseEvent" && args.type === "mousePressed") {
+          await validate();
+          if (signal?.aborted) throw new Error("canceled");
+          automation.armDownload(contents, signal);
+        }
+        const work = sendDesktopCdpCommand(debuggerRef, name, args, { ...debugContext, timeoutMs });
+        return automation ? automation.raceModal(contents, work) : work;
+      };
+      // Typed actions report the state they produced, as the Chrome provider does; the action outcome stays separate.
+      const withObservation = async <T extends object>(result: T, observe: SurfaceObserveParams = {}) => ({
+        ...result, ...await this.observations.observeAfterAction(surfaceId, observe, contents, send, validate, signal),
+      });
+      if (method === "Surface.observe") return await this.observations.observe(surfaceId, params as SurfaceObserveParams, contents, send, validate, signal);
+      if (automation && PAGE_AUTOMATION_METHODS.has(method)) {
+        try {
+          const { result, observe } = await executePageAutomationCommand({ method, params, surfaceId, contents, automation, observations: this.observations, send, validate, signal });
+          return observe ? await withObservation(result) : result;
+        } catch (error) {
+          if (method !== "Surface.uploadFiles" || (error as { code?: unknown })?.code !== "dialog_pending") throw error;
+          return await withObservation({ status: "failed", action: "upload", error: "dialog_pending", outcome: "unknown" });
+        }
       }
-      return await sendDesktopCdpCommand(debuggerRef, method, params, debugContext);
+      if (method === "Surface.click") return await withObservation(await this.observations.click(surfaceId, params as SurfaceClickParams, contents, send, validate, signal));
+      if (method === "Surface.interact" || method === "Surface.scroll") {
+        const interact = method === "Surface.scroll" ? { ...(params as SurfaceScrollParams), action: "scroll" as const } : params as SurfaceInteractParams;
+        let result: object;
+        try {
+          result = await this.observations.interact(surfaceId, interact, contents, send, validate, signal,
+            (phase, evidence) => (debugContext.logger ?? console).debug?.("[desktop-cdp] semantic-input-focus", { surfaceId, phase, ...evidence }));
+        } catch (error) {
+          // The action opened a native modal: its effect is unknown and it must never be replayed.
+          const code = (error as { code?: unknown })?.code;
+          if (!automation || (code !== "dialog_pending" && code !== "file_chooser_pending")) throw error;
+          result = { status: "failed", action: interact.action, error: code, outcome: "unknown" };
+        }
+        return await withObservation(result, interact.action === "scroll" ? { viewportOnly: true } : {});
+      }
+      if (method === "Input.click") {
+        const result = await executeClick(params as DesktopClickParams, contents, send, async () => {
+          scope?.validateTab(tab);
+          const current = await this.resolveCommandTarget({ method, surfaceId, source: { chatId: surface.ownerChatId } }, scope);
+          if (current.tab.webContentsId !== contents.id) throw new Error("target_replaced");
+        }, signal);
+        return result.action.outcome === "not_started" ? result : await withObservation(result);
+      }
+      // A beforeunload dialog can block navigation; release the caller so it can be handled.
+      const work = sendDesktopCdpCommand(debuggerRef, method, params, debugContext);
+      return await (automation ? automation.raceModal(contents, work) : work);
     } finally {
       try {
-        if (emulateFocus && debuggerRef.isAttached() && !contents.isDestroyed()) {
+        if (releaseFocus) await releaseFocus();
+        else if (emulateFocus && !automation && debuggerRef.isAttached() && !contents.isDestroyed()) {
           await sendDesktopCdpCommand(debuggerRef, "Emulation.setFocusEmulationEnabled", { enabled: false }, debugContext);
         }
       } finally {
+        input?.end();
         if (ownsAttach && debuggerRef.isAttached()) {
-          try { debuggerRef.detach(); } catch { /* Target is closing. */ }
+          try { this.observations.detachOwnedDebugger(contents, () => debuggerRef.detach()); } catch { /* Target is closing. */ }
         }
       }
     }

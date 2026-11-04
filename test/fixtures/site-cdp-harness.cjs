@@ -31,10 +31,10 @@ function createSiteHarness() {
       reload() { commands.push({ id: this.id, method: 'Page.reload' }); },
       enableDeviceEmulation(params) { commands.push({ id: this.id, method: 'enableDeviceEmulation', params }); },
       disableDeviceEmulation() { commands.push({ id: this.id, method: 'disableDeviceEmulation' }); },
-      debugger: {
+      debugger: Object.assign(new EventEmitter(), {
         isAttached: () => attached, attach: () => { attached = true; }, detach: () => { attached = false; },
         sendCommand: async (method, params) => { commands.push({ id: value.id, method, params }); return { value: value.id }; },
-      },
+      }),
     });
     contents.set(value.id, value);
     return value;
