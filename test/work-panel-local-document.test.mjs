@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
+import vm from "node:vm";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -154,4 +156,100 @@ test("public WorkPanel bridges reject even a valid native local-document descrip
     assert.equal(web.ok, true, "the fixture represents an authorized WorkPanel caller");
     assert.equal(dispatched.length, 1);
   }
+});
+
+const readRenderer = (name) => fs.readFileSync(path.join(process.cwd(), "src/renderer/work-panel", name), "utf8");
+
+test("local file previews omit the host toolbar while web previews keep it", () => {
+  const localDocument = readRenderer("WorkPanelLocalDocument.tsx");
+  const host = readRenderer("WorkPanelHost.tsx");
+  assert.match(localDocument, /showToolbar=\{false\}/u);
+  assert.doesNotMatch(localDocument, /onRevealDocument|toolbarDocumentName|revealFailed/u);
+  assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web"\}/u);
+  assert.match(host, /isLocalDocumentDraftOwnerKey\(workspace\.ownerChatId\)\s*&&\s*!\(item\.descriptor\.kind === "native"\s*&&\s*item\.descriptor\.surfaceKey === "local-document"\)/u);
+});
+
+function localFileMenuHarness(owner, item) {
+  const host = readRenderer("WorkPanelHost.tsx");
+  const profile = host.slice(host.indexOf("function tabContextMenuProfile("), host.indexOf("function workPanelDocumentPath("));
+  const start = host.indexOf("  const handleTabContextMenu = async (");
+  const handler = host.slice(start, host.indexOf("\n  useEffect(", start));
+  const { transpileModule, ScriptTarget } = require("typescript");
+  const script = transpileModule(profile + handler, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText;
+  const calls = { menus: [], revealed: [], reloads: [], errors: [], actions: [] };
+  const stateRef = { current: {
+    workspaces: [{ ownerChatId: owner, items: [item] }],
+    review: { activeItemIdsByOwnerChatId: {} },
+  } };
+  let failReveal = false;
+  let closeDuringMenu = false;
+  const reveal = async (request) => {
+    calls.revealed.push(request);
+    return failReveal ? { ok: false, message: "reveal failed" } : { ok: true };
+  };
+  const invoke = vm.runInNewContext(script + "\nhandleTabContextMenu;", {
+    window: { electronAPI: {
+      chatWorkPanelTabContextMenu: { popup: async (request) => {
+        calls.menus.push(request);
+        if (closeDuringMenu) stateRef.current.workspaces = [];
+        return { actionId: calls.actions.shift() };
+      } },
+      localDocuments: { reveal },
+      chatWorkPanel: { localFiles: { reveal } },
+    } },
+    stateRef,
+    resourceReviewCapabilities: {},
+    nativeHtmlControllers: { current: new Map() },
+    rendererGenerationRef: { current: "renderer-generation" },
+    fullscreenOwnerChatId: null,
+    itemRuntimeKey: (chatId, itemId) => `${chatId}:${itemId}`,
+    reviewSourceForItem: () => null,
+    workPanelDocumentPath: () => "",
+    getWorkPanelReviewSession: () => null,
+    findItemWebview: (chatId, itemId) => ({ reload: () => calls.reloads.push({ chatId, itemId }) }),
+    modal: { error: (error) => calls.errors.push(error) },
+    t: (key) => key,
+  });
+  return {
+    calls,
+    run: (action) => {
+      calls.actions.push(action);
+      return invoke({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 20 }, owner, item);
+    },
+    failReveal: () => { failReveal = true; },
+    closeDuringMenu: () => { closeDuringMenu = true; },
+  };
+}
+
+test("local document menus refresh the selected guest and reveal by opaque identity even before the first Chat", async () => {
+  for (const owner of [ownerChatId, "file-draft:xiaojun:1700000000000"]) {
+    const item = { itemId: "document-tab", stableKey: `local-document:${documentId}`, closable: true, pinned: false, descriptor: descriptor() };
+    const harness = localFileMenuHarness(owner, item);
+    await harness.run("reload");
+    await harness.run("reveal-resource");
+    assert.equal(harness.calls.menus[0].profile, "local-file");
+    assert.deepEqual(harness.calls.reloads, [{ chatId: owner, itemId: item.itemId }]);
+    assert.deepEqual(harness.calls.revealed, [documentId], "draft grouping keys never reach the file API");
+    assert.equal(harness.calls.errors.length, 0);
+    harness.failReveal();
+    await harness.run("reveal-resource");
+    assert.equal(harness.calls.errors[0].content, "reveal failed");
+    harness.closeDuringMenu();
+    await harness.run("reveal-resource");
+    assert.equal(harness.calls.revealed.length, 2, "a closed tab cannot trigger a late file action");
+  }
+});
+
+test("workspace local-file menus retain owner and generation-bound reveal requests", async () => {
+  const item = { itemId: "local-file-tab", stableKey: "local-file:opaque-handle", closable: true, pinned: false,
+    descriptor: { kind: "local-file", handleId: "opaque-handle", fileName: "report.html", previewKind: "html" } };
+  const harness = localFileMenuHarness(ownerChatId, item);
+  await harness.run("reload");
+  await harness.run("reveal-resource");
+  assert.equal(harness.calls.menus[0].profile, "local-file");
+  assert.equal(harness.calls.reloads.length, 1);
+  assert.equal(harness.calls.revealed[0].ownerChatId, ownerChatId);
+  assert.equal(harness.calls.revealed[0].rendererGeneration, "renderer-generation");
+  assert.equal(harness.calls.revealed[0].handleId, "opaque-handle");
+  assert.deepEqual(Object.keys(harness.calls.revealed[0]).sort(), ["handleId", "ownerChatId", "rendererGeneration"]);
 });

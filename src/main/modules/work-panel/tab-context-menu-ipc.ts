@@ -47,6 +47,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 const WORK_PANEL_CONTEXT_MENU_PROFILES = new Set<ChatWorkPanelTabContextMenuProfile>([
   "default",
   "web",
+  "local-file",
   "artifact",
   "reference"
 ]);
@@ -125,7 +126,18 @@ function buildWorkPanelTemplate(
 ) {
   const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
   const resourceProfile = request.profile === "artifact" || request.profile === "reference";
+  const localFileProfile = request.profile === "local-file";
   const fileActionsAvailable = resourceProfile || Boolean(request.nativeHtml) || Boolean(request.nativeImage);
+  const revealItem = {
+    id: "reveal-resource",
+    enabled: request.nativeImage ? request.nativeImage.localOriginal : request.nativeHtml ? request.nativeHtml.localOriginal : true,
+    label: t(platform === "darwin"
+      ? "chatWorkPanel.tabContextMenu.revealInFinder"
+      : platform === "win32"
+        ? "chatWorkPanel.tabContextMenu.revealInExplorer"
+        : "chatWorkPanel.tabContextMenu.revealInFileManager"),
+    click: click("reveal-resource")
+  };
   const currentTabItems = [
     ...(!request.reviewMode || request.reviewMode === "unavailable"
       ? []
@@ -145,7 +157,7 @@ function buildWorkPanelTemplate(
     },
     {
       id: "reload",
-      label: t(fileActionsAvailable
+      label: t(fileActionsAvailable || localFileProfile
         ? "chatWorkPanel.tabContextMenu.reloadPreview"
         : "webviewContextMenu.page.reload"),
       click: click("reload")
@@ -188,23 +200,14 @@ function buildWorkPanelTemplate(
           label: t("chatWorkPanel.tabContextMenu.openInDefaultApp"),
           click: click("open-resource-default-app")
         },
-        {
-          id: "reveal-resource",
-          enabled: request.nativeImage ? request.nativeImage.localOriginal : request.nativeHtml ? request.nativeHtml.localOriginal : true,
-          label: t(platform === "darwin"
-            ? "chatWorkPanel.tabContextMenu.revealInFinder"
-            : platform === "win32"
-              ? "chatWorkPanel.tabContextMenu.revealInExplorer"
-              : "chatWorkPanel.tabContextMenu.revealInFileManager"),
-          click: click("reveal-resource")
-        },
+        revealItem,
         {
           id: "copy-title",
           label: t("chatWorkPanel.tabContextMenu.copyFilename"),
           click: click("copy-title")
         }
       ]
-    : [];
+    : localFileProfile ? [revealItem] : [];
   const closeItems = [
     {
       id: "close-tab",

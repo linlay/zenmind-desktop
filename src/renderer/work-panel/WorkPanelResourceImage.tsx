@@ -841,7 +841,12 @@ export function WorkPanelResourceImage({
     if (!viewport || !current) return;
     const update = () => {
       const canvas = fabricCanvasRef.current;
-      if (canvas)
+      // Fabric clears the backing store even for unchanged dimensions; zoom must only update the transform.
+      if (
+        canvas &&
+        (canvas.getWidth() !== viewport.clientWidth ||
+          canvas.getHeight() !== viewport.clientHeight)
+      )
         canvas.setDimensions({
           width: viewport.clientWidth,
           height: viewport.clientHeight,

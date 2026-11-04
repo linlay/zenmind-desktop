@@ -1,5 +1,4 @@
-import { CloseOutlined } from "@ant-design/icons";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense } from "react";
 import type { LocalDocumentItem } from "../../shared/local-document";
 import { useI18n } from "../i18n/useI18n";
 import "./WorkPanelLocalDocument.css";
@@ -22,14 +21,6 @@ export function WorkPanelLocalDocument({
   document, active, onLoadingChange,
 }: WorkPanelLocalDocumentProps) {
   const { t } = useI18n();
-  const [revealFailed, setRevealFailed] = useState(false);
-
-  const reveal = async () => {
-    setRevealFailed(false);
-    try {
-      if (!(await window.electronAPI.localDocuments.reveal(document.documentId)).ok) setRevealFailed(true);
-    } catch { setRevealFailed(true); }
-  };
 
   return (
     <div className="work-panel-local-document" data-local-document-id={document.documentId}>
@@ -43,7 +34,7 @@ export function WorkPanelLocalDocument({
           chrome="browser"
           documentPreview
           documentPreviewVersion={document.version}
-          toolbarDocumentName={document.fileName}
+          showToolbar={false}
           allowUserTabCreation={false}
           allowTabUrlCopy={false}
           enableDesktopWebActions={false}
@@ -52,16 +43,8 @@ export function WorkPanelLocalDocument({
           publishPageContext={false}
           showLoadingProgress
           onLoadingChange={onLoadingChange}
-          onRevealDocument={() => { void reveal(); }}
         />
       </Suspense>
-      {revealFailed ? (
-        <div className="work-panel-local-document-error" role="alert">
-          <span>{t("localDocuments.actionFailed")}</span>
-          <button type="button" onClick={() => { void reveal(); }}>{t("common.retry")}</button>
-          <button type="button" aria-label={t("common.close")} onClick={() => setRevealFailed(false)}><CloseOutlined /></button>
-        </div>
-      ) : null}
     </div>
   );
 }
