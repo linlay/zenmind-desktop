@@ -60,8 +60,10 @@ app.whenReady().then(async () => {
     chrome = spawn(chromePath, flags, { stdio: "ignore" });
     const portFile = path.join(profile, "DevToolsActivePort");
     for (let count = 0; !fs.existsSync(portFile) && count < 200; count++) await delay(25);
-    const endpoint = `http://127.0.0.1:${fs.readFileSync(portFile, "utf8").split("\n")[0]}`;
-    owner = await chromium.connectOverCDP(endpoint);
+    // /json requests stay on HTTP; Playwright connects through the published browser WebSocket because its HTTP discovery honours HTTP(S)_PROXY even for loopback.
+    const [port, browserPath] = fs.readFileSync(portFile, "utf8").trim().split("\n");
+    const endpoint = `http://127.0.0.1:${port}`, browserEndpoint = `ws://127.0.0.1:${port}${browserPath}`;
+    owner = await chromium.connectOverCDP(browserEndpoint);
     const first = owner.contexts()[0].pages()[0]; await first.goto(`${url}/allowed`);
     const second = await owner.contexts()[0].newPage(); await second.goto(`${url}/unshared`);
     await owner.close(); owner = undefined;
@@ -130,7 +132,7 @@ app.whenReady().then(async () => {
     checks.pendingCancelled = await pending;
     checks.stopMs = Date.now() - stoppedAt;
     checks.chromePreserved = chrome.exitCode === null;
-    owner = await chromium.connectOverCDP(endpoint);
+    owner = await chromium.connectOverCDP(browserEndpoint);
     const pages = owner.contexts()[0].pages();
     checks.unsharedPreserved = await pages.find(page => page.url().endsWith("/unshared"))?.title();
     checks.value = await pages.find(page => page.url().endsWith("/allowed"))?.locator("#name").inputValue();

@@ -94,8 +94,10 @@ test("official extension copies explicit downloads and preserves ordinary browse
       `--user-data-dir=${profile}`, `--disable-extensions-except=${extension}`, `--load-extension=${extension}`, "about:blank"], { stdio: "ignore" });
     const portFile = path.join(profile, "DevToolsActivePort");
     for (let i=0;i<200&&!fs.existsSync(portFile);i++) await delay(25);
-    const endpoint = `http://127.0.0.1:${fs.readFileSync(portFile, "utf8").split("\n")[0]}`;
-    owner = await chromium.connectOverCDP(endpoint);
+    // /json requests stay on HTTP; Playwright connects through the published browser WebSocket because its HTTP discovery honours HTTP(S)_PROXY even for loopback.
+    const [port, browserPath] = fs.readFileSync(portFile, "utf8").trim().split("\n");
+    const endpoint = `http://127.0.0.1:${port}`;
+    owner = await chromium.connectOverCDP(`ws://127.0.0.1:${port}${browserPath}`);
     await owner.contexts()[0].pages()[0].goto(`${origin}/allowed`);
     await (await owner.contexts()[0].newPage()).goto(`${origin}/unshared`);
     await owner.close(); owner = undefined;

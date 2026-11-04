@@ -296,8 +296,10 @@ test("real Chrome: cancellation disconnects the owned CDP client, keeps Chrome a
   t.after(async () => { child.kill(); await once(child, "exit").catch(() => {}); fs.rmSync(profile, { recursive: true, force: true }); });
   const endpointFile = path.join(profile, "DevToolsActivePort");
   for (let count = 0; !fs.existsSync(endpointFile) && count < 100; count++) await delay(50);
-  const port = fs.readFileSync(endpointFile, "utf8").split("\n")[0];
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  // The published browser WebSocket skips HTTP discovery, which honours HTTP(S)_PROXY even for loopback.
+  const [port, browserPath] = fs.readFileSync(endpointFile, "utf8").trim().split("\n");
+  const endpoint = `ws://127.0.0.1:${port}${browserPath}`;
+  const browser = await chromium.connectOverCDP(endpoint);
   const context = browser.contexts()[0];
   const page = context.pages()[0]; await page.goto(`http://127.0.0.1:${server.address().port}/cancel`);
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "browser-use-cancel-"));
@@ -320,7 +322,7 @@ test("real Chrome: cancellation disconnects the owned CDP client, keeps Chrome a
   assert.deepEqual(await engine.request({ id: "released-state", method: "state" }), { connected: false, pages: [] });
   assert.ok(Date.now() - started < 3000, "releasing the CDP transport should interrupt auto-waiting");
   assert.equal(child.exitCode, null, "Chrome process survives disconnect");
-  const reconnected = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  const reconnected = await chromium.connectOverCDP(endpoint);
   assert.equal(reconnected.contexts()[0].pages().length, 1);
   assert.equal(await reconnected.contexts()[0].pages()[0].locator("#increment").textContent(), "Increment");
   await reconnected.close();

@@ -120,7 +120,10 @@ function observationRuntime(key: string, request: ObservationProbeRequest) {
             const item: Record<string, unknown> = { ref, role, name: nameOf(element), tag: element.tagName.toLowerCase(), disabled: disabled(element) };
             const sensitive = sensitiveField(element);
             if (element.matches("input:not([type=password]):not([type=file]), textarea, select") && !sensitive) {
-              item.value = clean((element as HTMLInputElement).value, 1000);
+              // Field values are read back exactly: whitespace is data, and a clipped value marks the observation truncated.
+              const value = (element as HTMLInputElement).value;
+              item.value = value.slice(0, 1000);
+              if (value.length > 1000) truncated = true;
             }
             if (element.tagName === "SELECT" && !sensitive) {
               const select = element as HTMLSelectElement;

@@ -169,3 +169,23 @@ test('real page: selector targets, multiple select, check state and viewport-onl
   assert.equal(located.matched, true);
   assert.ok(located.y >= 0 && located.y < 600, 'locate scrolls the selector target into view');
 });
+
+test('real page: observed field values keep whitespace and a clipped value marks the observation truncated', { skip: !chromeAvailable }, async t => {
+  const { chromium } = require('playwright-core');
+  const browser = await chromium.launch({ executablePath, headless: true });
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  await page.setContent('<textarea aria-label="Notes"></textarea><input aria-label="Long value">');
+  const observe = () => page.evaluate(expression => (0, eval)(expression),
+    observationExpression('__test_key', { kind: 'observe', observationId: 'o1', maxTextLength: 2000, maxElements: 50 }));
+
+  await page.locator('textarea').fill('  line 1\n\nline 2  ');
+  let observed = await observe();
+  assert.equal(observed.elements.find(element => element.name === 'Notes').value, '  line 1\n\nline 2  ');
+  assert.equal(observed.truncated, false);
+
+  await page.locator('input').fill('x'.repeat(1100));
+  observed = await observe();
+  assert.equal(observed.elements.find(element => element.name === 'Long value').value, 'x'.repeat(1000));
+  assert.equal(observed.truncated, true);
+});

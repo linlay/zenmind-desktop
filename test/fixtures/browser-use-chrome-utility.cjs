@@ -40,8 +40,9 @@ app.whenReady().then(async () => {
     chrome = spawn(chromePath, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
     const endpointFile = path.join(profile, "DevToolsActivePort");
     for (let count = 0; !fs.existsSync(endpointFile) && count < 200; count++) await delay(25);
-    const port = fs.readFileSync(endpointFile, "utf8").split("\n")[0];
-    const endpoint = `http://127.0.0.1:${port}`;
+    // The published browser WebSocket skips HTTP discovery, which honours HTTP(S)_PROXY even for loopback.
+    const [port, browserPath] = fs.readFileSync(endpointFile, "utf8").trim().split("\n");
+    const endpoint = `ws://127.0.0.1:${port}${browserPath}`;
     owner = await chromium.connectOverCDP(endpoint);
     const context = owner.contexts()[0];
     const first = context.pages()[0];
