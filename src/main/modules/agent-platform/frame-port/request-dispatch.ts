@@ -549,16 +549,9 @@ export function createRequestDispatch(deps: RequestDispatchPort) {
             };
             if (!siteControlScope) deps.processQueryBootstrapFrame(binding, upstreamFrame);
             updateBindingFromFrame(binding, upstreamFrame);
-            if (binding.canonicalChatReady) {
-              try {
-                await binding.canonicalChatReady;
-              } catch {
-                // The original promise still fails the Run action grant. Do not
-                // poison the accepted query's event queue as well: its own guest
-                // needs chat.start and the later error/terminal to reconcile UI.
-              }
-            }
-            if (!binding.suppressed && !binding.detachSent && !session.closed)
+            if (binding.canonicalChatReady)
+              await binding.canonicalChatReady;
+            if (!binding.suppressed)
               deps.sendFrame(session, upstreamFrame);
           },
         });

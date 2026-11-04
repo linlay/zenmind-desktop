@@ -34,6 +34,7 @@ function serializeValue(
   value: unknown,
   state: SerializeState,
   depth: number,
+  browserFileTransfer = false,
 ): unknown {
   if (value === null || typeof value === "number" || typeof value === "boolean") return value;
   if (typeof value === "string") return serializeString(value, state);
@@ -54,7 +55,7 @@ function serializeValue(
     if (Array.isArray(value)) {
       const items = value
         .slice(0, MAX_ARRAY_ITEMS)
-        .map((item) => serializeValue(item, state, depth + 1));
+        .map((item) => serializeValue(item, state, depth + 1, browserFileTransfer));
       if (value.length > MAX_ARRAY_ITEMS) {
         items.push(`<TRUNCATED ${value.length - MAX_ARRAY_ITEMS} items>`);
       }
@@ -62,14 +63,16 @@ function serializeValue(
     }
 
     const output: Record<string, unknown> = {};
-    const entries = Object.entries(value as Record<string, unknown>);
-    const binaryRecord = typeof (value as Record<string, unknown>).mimeType === "string"
-      || typeof (value as Record<string, unknown>).sha256 === "string";
+    const record = value as Record<string, unknown>;
+    const entries = Object.entries(record);
+    const binaryChunk = record.encoding === "base64" &&
+      (record.type === "desktop.bridge.response.delta" || record.type === "desktop.cdp.screenshot.delta");
     for (const [key, item] of entries.slice(0, MAX_OBJECT_KEYS)) {
-      // File bodies and encoded transport chunks stay out of the local preview.
-      output[key] = typeof item === "string" && ((binaryRecord && key === "data") || key === "chunk")
+      // Only browser file bodies and the bridge's explicit binary chunks are omitted.
+      // Ordinary business fields named data/chunk retain the existing diagnostic behavior.
+      output[key] = browserFileTransfer && typeof item === "string" && (key === "data" || (binaryChunk && key === "chunk"))
         ? REDACTED_VALUE
-        : serializeValue(item, state, depth + 1);
+        : serializeValue(item, state, depth + 1, browserFileTransfer);
     }
     if (entries.length > MAX_OBJECT_KEYS) {
       output.__truncatedKeys = entries.length - MAX_OBJECT_KEYS;
@@ -81,12 +84,17 @@ function serializeValue(
 }
 
 // Preserve local diagnostic values except file bodies, with bounded snapshots.
-export function serializeAgentRealtimeDebugValue(value: unknown) {
+export function serializeAgentRealtimeDebugValue(value: unknown, browserFileTransfer = false) {
+  const frame = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const body = frame.frame === "request" ? frame.payload : frame.data;
+  const method = body && typeof body === "object" ? (body as Record<string, unknown>).method : undefined;
+  browserFileTransfer ||= frame.type === "desktop.cdp.call" &&
+    (method === "Surface.uploadFiles" || method === "Surface.readDownload");
   return serializeValue(value, {
     nodes: 0,
     remainingStringChars: MAX_TRACE_STRING_CHARS,
     seen: new WeakSet(),
-  }, 0);
+  }, 0, browserFileTransfer);
 }
 
 export class RealtimeDebugTraceBuffer {
@@ -99,6 +107,8 @@ export class RealtimeDebugTraceBuffer {
     layer: AgentRealtimeDebugTraceLayer;
     direction: AgentRealtimeDebugTraceDirection;
     data: unknown;
+    /** Private sender metadata for file response chunks without a method field. */
+    browserFileTransfer?: boolean;
     surfaceId?: string;
     webContentsId?: number;
     surfaceKind?: string;
@@ -114,7 +124,7 @@ export class RealtimeDebugTraceBuffer {
       recordedAt: requireEpochMillis(Date.now(), "agentRealtimeDebugTrace.recordedAt"),
       layer: input.layer,
       direction: input.direction,
-      data: serializeAgentRealtimeDebugValue(input.data),
+      data: serializeAgentRealtimeDebugValue(input.data, input.browserFileTransfer),
       ...(input.surfaceId?.trim() ? { surfaceId: input.surfaceId.trim() } : {}),
       ...(Number.isSafeInteger(input.webContentsId) ? { webContentsId: input.webContentsId } : {}),
       ...(input.surfaceKind?.trim() ? { surfaceKind: input.surfaceKind.trim() } : {}),

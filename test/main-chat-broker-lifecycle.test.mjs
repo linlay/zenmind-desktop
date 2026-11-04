@@ -102,10 +102,7 @@ async function harness(t) {
     issueAccessToken: async () => ({ ok: true, token: "test-token", message: "" }),
     syncCanonicalChat: async (_owner, input) => {
       syncs.push(input);
-      if (beforeCanonicalSync) {
-        const result = await beforeCanonicalSync(input);
-        if (result) return result;
-      }
+      if (beforeCanonicalSync) await beforeCanonicalSync(input);
       const route = new URL(sender.url);
       if (route.searchParams.get("newChat") !== input.newChat) {
         return { requestId: "sync", ok: false, code: "stale_source", message: "source changed" };
@@ -423,78 +420,4 @@ test('failed canonical synchronization revokes a prepared browser grant instead 
   const response = await browser.reverse('failed-browser-open', 'desktop.workpanel.openWeb', source, { url: 'https://fixture.test/' });
   assert.equal(response.frame, 'error');
   assert.equal(browser.actions.length, 0);
-});
-
-for (const terminal of ['complete', 'error']) {
-test(`canonical ACK timeout preserves the accepted guest stream and its ${terminal} terminal without granting browser control`, async t => {
-  const h = await harness(t);
-  const browser = attachBrowserUse(h, t);
-  h.register('/agent/agent-1?newChat=1788000000105');
-  let expire;
-  h.beforeSync(() => new Promise(resolve => {
-    expire = () => resolve({ requestId: 'delayed-ack', ok: false, code: 'surface_registration_failure',
-      message: 'canonical Chat surface synchronization timed out' });
-  }));
-  await h.open();
-  const request = await h.query('delayed-ack-query');
-  await h.accept(request, 'delayed-ack-chat', 'delayed-ack-run');
-  const source = { chatId: 'delayed-ack-chat', runId: 'delayed-ack-run', agentKey: 'agent-1' };
-  assert.deepEqual(browser.lifecycle, [['prepared', source]]);
-  assert.equal(h.frames().some(frame => frame.event?.type === 'chat.start'), false);
-  expire();
-  await flush();
-  assert.equal(browser.lifecycle.some(([type]) => type === 'ready'), false);
-  assert.equal(browser.runtime.state(source.chatId).activeRunIds.length, 0);
-  const denied = await browser.reverse('delayed-ack-browser-open', 'desktop.workpanel.openWeb', source,
-    { url: 'https://fixture.test/' });
-  assert.equal(denied.type, 'source_chat_not_ready');
-  assert.equal(browser.actions.length, 0);
-  await until(() => h.frames().some(frame => frame.event?.type === 'run.start'));
-  assert.deepEqual(h.frames().filter(frame => frame.event).map(frame => frame.event.type),
-    ['chat.start', 'request.query', 'run.start']);
-  if (terminal === 'complete') {
-    for (const [index, type] of ['tool.result', 'run.complete'].entries()) {
-      h.sockets[0].emit({ frame: 'stream', id: request.id, event: { type, timestamp: EPOCH + 10 + index,
-        seq: 4 + index, ...source, ...(type === 'tool.result' ? { tool: 'surface_open', ok: false,
-          error: { code: 'source_chat_not_ready' } } : {}) } });
-    }
-    h.sockets[0].emit({ frame: 'stream', id: request.id, reason: 'complete', lastSeq: 5 });
-    await until(() => h.frames().some(frame => frame.id === 'delayed-ack-query' && frame.reason === 'complete'));
-    assert.deepEqual(h.frames().filter(frame => frame.event).map(frame => frame.event.type),
-      ['chat.start', 'request.query', 'run.start', 'tool.result', 'run.complete']);
-    assert.equal(h.frames().some(frame => frame.frame === 'error'), false);
-  } else {
-    h.sockets[0].emit({ frame: 'error', id: request.id, type: 'fixture_provider_unavailable', code: 503,
-      msg: 'Fixture provider is unavailable.' });
-    await until(() => h.frames().some(frame => frame.id === 'delayed-ack-query' && frame.frame === 'error'));
-    const error = h.frames().find(frame => frame.id === 'delayed-ack-query' && frame.frame === 'error');
-    assert.match(error.msg, /Fixture provider is unavailable/u);
-    assert.doesNotMatch(error.msg, /canonical Chat surface synchronization timed out/u);
-  }
-});
-}
-
-test('a late canonical ACK failure cannot deliver bootstrap or terminal frames into a replacement Chat', async t => {
-  const h = await harness(t);
-  h.register('/agent/agent-1?newChat=1788000000106');
-  let expire;
-  h.beforeSync(() => new Promise(resolve => {
-    expire = () => resolve({ requestId: 'stale-ack', ok: false, code: 'surface_registration_failure', message: 'ACK timed out' });
-  }));
-  await h.open();
-  const old = await h.query('stale-ack-query');
-  await h.accept(old, 'stale-ack-chat', 'stale-ack-run');
-  const replacement = h.register('/agent/agent-1?newChat=1788000000107');
-  expire();
-  await flush();
-  h.sockets[0].emit({ frame: 'stream', id: old.id, event: { type: 'run.complete', timestamp: EPOCH + 10,
-    seq: 4, chatId: 'stale-ack-chat', runId: 'stale-ack-run', agentKey: 'agent-1' } });
-  h.sockets[0].emit({ frame: 'stream', id: old.id, reason: 'complete', lastSeq: 4 });
-  await flush();
-  assert.equal(h.frames().some(frame => frame.id === 'stale-ack-query' &&
-    (frame.event || frame.frame === 'error' || frame.reason === 'complete')), false);
-  assert.equal(h.broker.getMainChatRootObserver().token, replacement.token);
-  h.beforeSync(null);
-  await h.accept(await h.query('replacement-query'), 'replacement-chat', 'replacement-run');
-  assert.equal(h.frames().some(frame => frame.id === 'replacement-query' && frame.event?.type === 'run.start'), true);
 });

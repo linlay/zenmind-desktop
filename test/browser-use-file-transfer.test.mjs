@@ -23,8 +23,68 @@ for (const [name, file] of [
 }
 const { ChromeTransferStore, decodeBrowserUploadFiles, BROWSER_FILE_MAX_BYTES } = require(path.join(temporary, "chrome-file-transfer.js"));
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
-const { RealtimeDebugTraceBuffer } =
+const { RealtimeDebugTraceBuffer, serializeAgentRealtimeDebugValue } =
   require("../dist-electron/main/modules/agent-platform/realtime/realtime-debug-trace.js");
+
+test("browser file traces omit bytes without hiding ordinary data or chunk diagnostics", () => {
+  const buffer = new RealtimeDebugTraceBuffer();
+  const append = data => buffer.append({ layer: "platform-ws", direction: "desktop-to-platform", data }).data;
+  const bytes = Buffer.from("private fixture file").toString("base64");
+  const upload = { lane: "primary", frame: "request", type: "desktop.cdp.call", payload: {
+    method: "Surface.uploadFiles", params: { files: [{ name: "fixture.txt", mimeType: "text/plain", data: bytes }] },
+  } };
+  const download = { lane: "primary", frame: "response", type: "desktop.cdp.call", data: {
+    method: "Surface.readDownload", result: { fileName: "fixture.txt", mimeType: "text/plain", data: bytes, sha256: "fixture-digest" },
+  } };
+  assert.equal(append(upload).payload.params.files[0].data, "<REDACTED>");
+  assert.equal(append(upload).payload.params.files[0].name, "fixture.txt");
+  assert.equal(append(download).data.result.data, "<REDACTED>");
+  assert.equal(append(download).data.result.sha256, "fixture-digest");
+  assert.equal(JSON.stringify(buffer.snapshot()).includes(bytes), false);
+  assert.equal(upload.payload.params.files[0].data, bytes);
+  assert.equal(download.data.result.data, bytes);
+  for (const frame of [
+    { frame: "response", type: "/api/example", data: { mimeType: "text/plain", sha256: "checksum", data: "ordinary data", chunk: "ordinary chunk" } },
+    { frame: "response", type: "/api/example", data: { method: "Surface.readDownload", result: { data: "ordinary data" } } },
+    { frame: "stream", event: { type: "text.delta", encoding: "base64", chunk: "ordinary encoded message" } },
+    { frame: "stream", event: { type: "desktop.bridge.response.delta", encoding: "utf8", chunk: "ordinary text" } },
+    { frame: "stream", event: { type: "desktop.bridge.response.delta", encoding: "base64", chunk: "ordinary bridge response" } },
+    { frame: "stream", event: { type: "desktop.cdp.screenshot.delta", encoding: "base64", chunk: "screenshot retains main diagnostics" } },
+  ]) assert.deepEqual(append(frame), frame);
+});
+
+test("large browser downloads carry local trace scope without changing ordinary bridge chunks or wire bytes", async () => {
+  const { createDesktopRequests } = require("../dist-electron/main/modules/agent-platform/realtime/desktop-requests.js");
+  const { AgentPlatformRealtimeClient } = require("../dist-electron/main/modules/agent-platform/realtime/agent-platform-realtime-client.js");
+  for (const [type, method, hidden] of [
+    ["desktop.cdp.call", "Surface.readDownload", true],
+    ["desktop.cdp.call", "Surface.getState", false],
+    ["desktop.action", "Surface.readDownload", false],
+  ]) {
+    const buffer = new RealtimeDebugTraceBuffer(), wire = [];
+    const client = {
+      state: { phase: "connected" },
+      socket: { send: raw => wire.push(JSON.parse(raw)) },
+      options: { onTrace: (_direction, frame, browserFileTransfer) => buffer.append({
+        layer: "platform-ws", direction: "desktop-to-platform", data: { lane: "primary", ...frame }, browserFileTransfer,
+      }) },
+      send: AgentPlatformRealtimeClient.prototype.send,
+    };
+    const requests = createDesktopRequests({ clients: { primary: client } });
+    const result = { method, result: { mimeType: "text/plain", data: "SYNTHETIC_CONTENT".repeat(20000), sha256: "fixture-digest" } };
+    await requests.sendDesktopBridgeSuccess("trace-scope", type, result, new AbortController().signal);
+    const chunks = wire.filter(frame => frame.frame === "stream");
+    assert.ok(chunks.length > 1, "exercise the real response chunking path");
+    assert.deepEqual(JSON.parse(Buffer.concat(chunks.map(frame => Buffer.from(frame.event.chunk, "base64"))).toString()), result);
+    assert.ok(wire.every(frame => !("browserFileTransfer" in frame)), "trace scope is not part of the protocol");
+    const traces = buffer.snapshot().filter(entry => entry.data.frame === "stream");
+    for (let index = 0; index < chunks.length; index++) {
+      const ordinaryPreview = serializeAgentRealtimeDebugValue({ lane: "primary", ...chunks[index] });
+      assert.equal(traces[index].data.event.chunk, hidden ? "<REDACTED>" : ordinaryPreview.event.chunk);
+      assert.equal(traces[index].data.event.seq, chunks[index].event.seq);
+    }
+  }
+});
 
 function download(name, bytes, overrides = {}) {
   return { suggestedFilename: () => name, createReadStream: async () => Readable.from([bytes]),
@@ -138,19 +198,4 @@ test("native download limit and capacity failures preserve the original download
   await store.endRun(); assert.deepEqual(store.list("page-a"), []); assert.equal(store.retainedBytes, 0);
   await store.prepare(tab); store.captureDownload(tab, make("next-run.txt", Buffer.from("next")));
   assert.equal((await finished(store, "page-a"))[0].status, "complete"); await store.shutdown();
-});
-
-test("realtime diagnostics preserve file metadata but never retain upload, download or stream bytes", () => {
-  const marker = "SYNTHETIC_FILE_BODY_MUST_NOT_BE_LOGGED";
-  const frame = { method: "Surface.uploadFiles", params: { files: [{ name: "fixture.txt", mimeType: "text/plain", data: marker }] },
-    response: { result: { fileName: "fixture.txt", mimeType: "text/plain", data: marker, sha256: "fixture-hash" } },
-    event: { type: "desktop.cdp.response.delta", chunk: marker } };
-  const buffer = new RealtimeDebugTraceBuffer();
-  const sanitized = buffer.append({ layer: "surface-bridge", direction: "desktop-to-platform", data: frame }).data;
-  assert.equal(JSON.stringify(sanitized).includes(marker), false);
-  assert.equal(sanitized.params.files[0].name, "fixture.txt");
-  assert.equal(sanitized.method, "Surface.uploadFiles");
-  assert.equal(JSON.stringify(buffer.snapshot()).includes(marker), false);
-  assert.equal(frame.params.files[0].data, marker);
-  assert.equal(frame.event.chunk, marker);
 });

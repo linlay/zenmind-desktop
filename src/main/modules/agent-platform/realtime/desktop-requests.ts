@@ -397,6 +397,8 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
   }
 
   async function sendDesktopBridgeSuccess(id: string, type: string, result: Record<string, unknown>, signal: AbortSignal): Promise<void> {
+    const browserFileTransfer = type === DESKTOP_CDP_REQUEST_TYPE &&
+      (result.method === "Surface.uploadFiles" || result.method === "Surface.readDownload");
     const resultNode = isRecord(result.result) ? result.result : null;
     const screenshot = type === DESKTOP_CDP_REQUEST_TYPE &&
       readText(result.method) === "Page.captureScreenshot" &&
@@ -459,7 +461,7 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
         return;
       seq += 1;
       const chunk = serialized.subarray(offset, Math.min(offset + DESKTOP_STREAM_RAW_CHUNK_BYTES, serialized.byteLength));
-      sendDesktopBridgeChunk(id, streamId, seq, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, chunk.toString("base64"));
+      sendDesktopBridgeChunk(id, streamId, seq, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, chunk.toString("base64"), browserFileTransfer);
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
     if (signal.aborted)
@@ -481,7 +483,7 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
     });
   }
 
-  function sendDesktopBridgeChunk(id: string, streamId: string, seq: number, type: string, chunk: string): void {
+  function sendDesktopBridgeChunk(id: string, streamId: string, seq: number, type: string, chunk: string, browserFileTransfer = false): void {
     deps.clients.primary.send({
       frame: "stream",
       id,
@@ -493,7 +495,7 @@ export function createDesktopRequests(deps: DesktopRequestsPort) {
         encoding: "base64",
         chunk,
       },
-    });
+    }, browserFileTransfer);
   }
 
   function sendDesktopBridgeError(id: string, type: string, code: number, msg: string, data?: unknown): void {

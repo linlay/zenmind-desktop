@@ -134,10 +134,11 @@ export class RealtimeBroker {
       },
       onState: (state) => this.handleConnectionState(lane, state),
       onDiagnostic: (message) => options.onDiagnostic?.(`${lane}:${message}`),
-      onTrace: (direction, frame) => this.debugTrace.append({
+      onTrace: (direction, frame, browserFileTransfer) => this.debugTrace.append({
         layer: "platform-ws",
         direction: direction === "in" ? "platform-to-desktop" : "desktop-to-platform",
         data: { lane, ...frame },
+        browserFileTransfer,
       }),
     });
     // Constructing a client does not open a socket. All Desktop platforms open
