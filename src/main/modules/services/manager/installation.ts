@@ -1,3 +1,4 @@
+import { resolvePreferredAgentPlatformRuntimeRoot } from "./runtime-paths";
 import { type App } from "electron";
 import { type ServiceDefinition } from "../../../support/manifest/manifest-utils";
 import { InstallBuiltinServiceOptions, integrationPorts, CORE_SERVICE_IDS } from "./manager-contracts";
@@ -96,6 +97,10 @@ export async function buildDesktopManagedDeployCommand(
   ports?: ServicesIntegrationPorts
 ) {
   const commandWithConfiguredArgs = appendConfiguredServiceLifecycleArgs(app, service, command, "deploy");
+  if (service.id === "agent-dictation") {
+    return [...appendDesktopDeployOutputDir(commandWithConfiguredArgs, layout),
+      "--registry-dir", path.join(resolvePreferredAgentPlatformRuntimeRoot(app), "registries")];
+  }
   if (service.id === "agent-platform") {
     const [containerHubBaseUrl, publicKeySourceFile] = await Promise.all([
       getDesktopManagedAgentPlatformContainerHubBaseUrl(app),

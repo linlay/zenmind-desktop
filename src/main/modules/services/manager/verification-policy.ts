@@ -59,7 +59,7 @@ export function buildVerificationResult(
         issues.push(t("service.verify.portNoManagedProcess", { port }));
       }
     }
-    if (service.id === "agent-container-hub" || service.id === "agent-platform") {
+    if (service.id === "agent-container-hub" || service.id === "agent-platform" || service.id === "agent-dictation") {
       if (!healthProbe) {
         issues.push(t("service.verify.healthMissing"));
       } else if (!healthProbe.ok) {

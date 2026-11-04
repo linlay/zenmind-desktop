@@ -75,7 +75,7 @@ const processIdentity = require(`${root}manager/process-identity.js`);
 const hostPolicy = require(`${root}manager/host-policy.js`);
 
 for (const platform of ["darwin", "win32"]) {
-  for (const id of ["agent-platform", "agent-container-hub"]) {
+  for (const id of ["agent-platform", "agent-container-hub", "agent-dictation"]) {
     test(`${platform}: ${id} requires its own health result`, (t) => {
       const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
       Object.defineProperty(process, "platform", { value: platform });

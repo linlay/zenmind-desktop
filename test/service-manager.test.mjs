@@ -2358,6 +2358,24 @@ test("desktop managed service commands keep deploy, start, and stop contracts se
       ["stop.sh", "--state-dir", identityLayout.stateDir]
     );
 
+    const dictation = { ...getBuiltinService("agent-platform"), id: "agent-dictation", web: { defaultPort: 11964 } };
+    const dictationLayout = {
+      programDir: getTestServiceProgramDir(userDataRoot, dictation.id, dictation.version),
+      configDir: getTestConfigDir(userDataRoot, dictation.id),
+      dataDir: getTestDataDir(userDataRoot, dictation.id),
+      stateDir: getTestStateDir(userDataRoot, dictation.id),
+      logDir: getTestLogDir(userDataRoot, dictation.id),
+      envPath: getTestEnvPath(userDataRoot, dictation.id),
+    };
+    const dictationDeploy = await __testInternals.buildDesktopManagedDeployCommand(app, dictation, ["deploy.sh"], dictationLayout);
+    assertFlag(dictationDeploy, "--output-dir", dictationLayout.configDir);
+    assert.ok(dictationDeploy.includes("--registry-dir"));
+    assert.equal(dictationDeploy.includes("--ap-runtime-dir"), false);
+    const dictationStart = __testInternals.appendDesktopManagedLayoutFlags(app, dictation, ["start.sh"], dictationLayout, "start");
+    for (const [flag, value] of [["--config-dir", dictationLayout.configDir], ["--state-dir", dictationLayout.stateDir], ["--log-dir", dictationLayout.logDir], ["--port", "11964"]]) assertFlag(dictationStart, flag, value);
+    assert.ok(dictationStart.includes("--sso-id-token-file"));
+    assert.deepEqual(__testInternals.appendDesktopManagedLayoutFlags(app, dictation, ["stop.sh"], dictationLayout, "stop"), ["stop.sh", "--state-dir", dictationLayout.stateDir]);
+
     const webclient = getBuiltinService("agent-webclient");
     const webclientLayout = {
       programDir: getTestServiceProgramDir(userDataRoot, webclient.id, webclient.version),

@@ -31,6 +31,13 @@ export async function createBrowserWebclientHost(record: AgentWebclientHostRecor
     throw new Error(t("settings.localServices.browserTargetInvalid"));
   }
   const platformOrigin = target.origin;
+  // Resolve the optional service on each request. Its absence never blocks the host.
+  function dictationOrigin(pathname: string) {
+    const route = record.hosting.proxyRoutes.find(route => route.path === pathname && route.targetEnv === "DICTATION_BASE_URL");
+    const upstream = route && resolveRouteTarget(record, route);
+    return upstream?.protocol === "http:" && upstream.hostname === "127.0.0.1" && !upstream.username && !upstream.password
+      ? upstream.origin : null;
+  }
   const server = http.createServer();
   const sockets = new Set<Socket>();
   const upstreamRequests = new Set<http.ClientRequest>();
@@ -127,7 +134,11 @@ export async function createBrowserWebclientHost(record: AgentWebclientHostRecor
     if (pathname.startsWith("/api/")) {
       if (pathname === "/api/desktop" || pathname.startsWith("/api/desktop/")) return denied(res, 403);
       const { token } = await issueToken(grant.identity);
-      const upstreamUrl = new URL(`${url.pathname}${url.search}`, platformOrigin);
+      const isDictation = pathname.startsWith("/api/dictation/");
+      if (isDictation && (pathname !== "/api/dictation/capabilities" || url.search || url.pathname !== pathname)) return denied(res, 403);
+      const destination = isDictation ? dictationOrigin(pathname) : platformOrigin;
+      if (!destination) return denied(res, 503);
+      const upstreamUrl = new URL(`${url.pathname}${url.search}`, destination);
       upstreamUrl.searchParams.delete("token"); upstreamUrl.searchParams.delete("access_token");
       const upstream = http.request(upstreamUrl, { method: req.method, headers: upstreamHeaders(req, token) }, response => {
         if (stopped) { response.destroy(); res.destroy(); return; }
@@ -155,19 +166,21 @@ export async function createBrowserWebclientHost(record: AgentWebclientHostRecor
     void (async () => {
       if (!validRequest(req, true)) { reject(); return; }
       const url = new URL(req.url || "/", origin);
-      if ((url.pathname !== "/ws" && url.pathname !== "/api/voice/ws") || (url.pathname === "/api/voice/ws" && url.search)) { reject(); return; }
+      if (!["/ws", "/api/voice/ws", "/api/dictation/ws"].includes(url.pathname) || (url.pathname !== "/ws" && url.search)) { reject(); return; }
       const grant = grantFor(req);
       if (!grant) { reject(); return; }
       const { token } = await issueToken(grant.identity);
       if (socket.destroyed) return;
       // Browser connections can never impersonate Desktop's privileged physical lanes.
-      const upstreamUrl = new URL(url.pathname, platformOrigin);
+      const destination = url.pathname === "/api/dictation/ws" ? dictationOrigin(url.pathname) : platformOrigin;
+      if (!destination) { reject(); return; }
+      const upstreamUrl = new URL(url.pathname, destination);
       if (url.pathname === "/ws") upstreamUrl.searchParams.set("source", "webclient");
       if (url.pathname === "/ws" && url.searchParams.has("surfaceId")) upstreamUrl.searchParams.set("surfaceId", url.searchParams.get("surfaceId")!.slice(0, 128));
       const upstream = http.request(upstreamUrl, { headers: {
         Connection: "Upgrade", Upgrade: "websocket",
         "Sec-WebSocket-Key": req.headers["sec-websocket-key"], "Sec-WebSocket-Version": "13",
-        Origin: platformOrigin,
+        Origin: destination,
         "Sec-WebSocket-Protocol": `bearer.${token}`
       } });
       upstreamRequests.add(upstream);

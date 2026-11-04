@@ -30,7 +30,7 @@ export function describeCapabilityRequirement(requirement: ManifestDesktopCapabi
 }
 
 export function getDefaultRequirementHttpTarget(requiredService: ServiceDefinition, webUrl: string) {
-  if (requiredService.id === "agent-platform" || requiredService.id === "agent-container-hub") {
+  if (requiredService.id === "agent-platform" || requiredService.id === "agent-container-hub" || requiredService.id === "agent-dictation") {
     return normalizeProbeUrl(webUrl, "/healthz");
   }
   return webUrl;
@@ -79,7 +79,7 @@ export async function ensureRequiredServiceHttpReachable(
   }
 
   const target = resolveRequirementHttpTarget(requiredService, webUrl, requirement.target);
-  const isHealthCheck = (requiredServiceId === "agent-platform" || requiredServiceId === "agent-container-hub")
+  const isHealthCheck = (requiredServiceId === "agent-platform" || requiredServiceId === "agent-container-hub" || requiredServiceId === "agent-dictation")
     && target === normalizeProbeUrl(webUrl, "/healthz");
   const authCapability = isHealthCheck ? "" : requirement.authCapability?.trim() ?? "";
   const authResult = authCapability

@@ -32,7 +32,7 @@
 ## Built-in Service Boundary
 
 - Desktop owns service lifecycle orchestration only: install/extract bundles, call each service's `deploy.sh`, `start.sh`, and `stop.sh`, pass documented lifecycle/layout arguments, validate bundle contracts, and read service status.
-- Desktop must not repair, migrate, normalize, preserve, or synthesize `.env` or service-owned config for the built-in services `agent-container-hub`, `agent-platform`, `agent-webclient`, and `identity-center`.
+- Desktop must not repair, migrate, normalize, preserve, or synthesize `.env` or service-owned config for the built-in services `agent-container-hub`, `agent-platform`, `agent-dictation`, `agent-webclient`, and `identity-center`.
 - Service-owned defaults, stale env cleanup, config migrations, runtime directory setup, public-key placement, URL/port env sync, and Docker/local-development env cleanup belong in that service's own `deploy.sh` or bundle build process.
 - `start.sh` should consume already-deployed config plus start-time lifecycle flags. Do not add Desktop-side compatibility shims for old service env keys or launcher arguments.
 

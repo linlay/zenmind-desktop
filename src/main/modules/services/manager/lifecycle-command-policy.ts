@@ -91,6 +91,14 @@ export function appendDesktopManagedLayoutFlags(
   layout: ServiceLayout,
   kind: ServiceCommandKind
 ) {
+  if (service.id === "agent-dictation") {
+    if (kind === "deploy") return command;
+    if (kind === "stop") return [...command, "--state-dir", layout.stateDir];
+    return [...command, "--config-dir", layout.configDir, "--state-dir", layout.stateDir,
+      "--log-dir", layout.logDir, "--port", String(getDesktopManagedCommandPort(service)),
+      "--sso-id-token-file", getDesktopSsoIdTokenFilePath(app)];
+  }
+
   if (service.id === "agent-platform") {
     if (kind === "deploy") {
       return command;
