@@ -789,8 +789,14 @@ export class ChromeWorkerEngine {
         if (signal.aborted) throw chromeWorkerError("cancelled", "Browser control has been released");
         if (params.ref !== undefined) this.observed(pageId, params.observationId);
         this.invalidate(pageId);
-        if (action === "fill") await locator!.fill(input!, { timeout: 10000, signal });
-        else if (action === "type") {
+        if (action === "fill") {
+          await locator!.fill(input!, { timeout: 10000, signal });
+          // Like WorkPanel, a filled input or textarea must hold exactly the requested value: observations
+          // omit long values, so this is the read-back. Rich-text layout has no exact text value.
+          const matched = await locator!.evaluate((element, expected) => !element.matches("input, textarea")
+            || (element as HTMLInputElement).value === expected, input!, { timeout: 2000 });
+          if (!matched) throw chromeWorkerError("input_value_mismatch", "The field does not hold the requested value after filling. Observe its current value before continuing; do not repeat the fill blindly.");
+        } else if (action === "type") {
           if (locator) await locator.pressSequentially(input!, { timeout: 10000, signal });
           else await tab.page.keyboard.insertText(input!);
         } else if (action === "press") {

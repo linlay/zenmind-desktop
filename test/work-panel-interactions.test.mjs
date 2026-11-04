@@ -170,7 +170,7 @@ test('real page: selector targets, multiple select, check state and viewport-onl
   assert.ok(located.y >= 0 && located.y < 600, 'locate scrolls the selector target into view');
 });
 
-test('real page: observed field values keep whitespace and a clipped value marks the observation truncated', { skip: !chromeAvailable }, async t => {
+test('real page: observed field values are exact, and a value beyond the Chrome-equal budget is omitted and marks the observation truncated', { skip: !chromeAvailable }, async t => {
   const { chromium } = require('playwright-core');
   const browser = await chromium.launch({ executablePath, headless: true });
   t.after(() => browser.close());
@@ -184,8 +184,13 @@ test('real page: observed field values keep whitespace and a clipped value marks
   assert.equal(observed.elements.find(element => element.name === 'Notes').value, '  line 1\n\nline 2  ');
   assert.equal(observed.truncated, false);
 
-  await page.locator('input').fill('x'.repeat(1100));
+  await page.locator('input').fill('x'.repeat(2048));
   observed = await observe();
-  assert.equal(observed.elements.find(element => element.name === 'Long value').value, 'x'.repeat(1000));
+  assert.equal(observed.elements.find(element => element.name === 'Long value').value, 'x'.repeat(2048));
+  assert.equal(observed.truncated, false);
+
+  await page.locator('input').fill('x'.repeat(2049));
+  observed = await observe();
+  assert.equal(observed.elements.find(element => element.name === 'Long value').value, undefined);
   assert.equal(observed.truncated, true);
 });

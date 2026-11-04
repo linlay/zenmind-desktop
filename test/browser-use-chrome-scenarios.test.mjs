@@ -320,3 +320,20 @@ test('Chrome viewport observation uses the main Frame with no default viewport a
   assert.equal(scrolled.observation.viewportOnly, true);
   assert.equal(scrolled.observationError, undefined);
 });
+
+test('Chrome fill confirms the exact field value, and observations return values exactly or omit them', { skip: !available, timeout: 30000 }, async t => {
+  const f = await fixture(t);
+  await f.page.setContent('<textarea aria-label="Notes"></textarea><input aria-label="Code" oninput="this.value=this.value.toUpperCase()"><input aria-label="Long">');
+  const notes = '  line 1\n\nline 2  ';
+  let result = await f.call('interact', { ...f.target(await f.observed(), 'Notes'), action: 'fill', value: notes });
+  assert.equal(result.action.outcome, 'complete');
+  assert.equal(result.observation.elements.find(item => item.name === 'Notes').value, notes);
+  await assert.rejects(f.call('interact', { ...f.target(await f.observed(), 'Code'), action: 'fill', value: 'abc' }), { code: 'input_value_mismatch' });
+  assert.equal(await f.page.locator('[aria-label="Code"]').inputValue(), 'ABC');
+  result = await f.call('interact', { ...f.target(await f.observed(), 'Long'), action: 'fill', value: 'x'.repeat(2048) });
+  assert.equal(result.observation.elements.find(item => item.name === 'Long').value, 'x'.repeat(2048));
+  result = await f.call('interact', { ...f.target(await f.observed(), 'Long'), action: 'fill', value: 'x'.repeat(2049) });
+  assert.equal(result.action.outcome, 'complete');
+  assert.equal(result.observation.elements.find(item => item.name === 'Long').value, undefined);
+  assert.equal(result.observation.truncated, true);
+});
