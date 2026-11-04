@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import vm from "node:vm";
+import ts from "typescript";
+import { createCanvas } from "@napi-rs/canvas";
+import { StaticCanvas } from "fabric";
 
 const {
   WorkPanelResourceImageRegistry,
@@ -435,4 +439,129 @@ test("native image download saves a copy and validates ownership", async () => {
     fs.unlinkSync(imagePath);
     assert.equal((await registry.saveCopy(request, webContents)).ok, false);
   } finally { registry.dispose(); fs.rmSync(homePath, { recursive: true, force: true }); }
+});
+
+function createImageViewportHarness() {
+  const sourceText = fs.readFileSync(new URL("../src/renderer/work-panel/WorkPanelResourceImage.tsx", import.meta.url), "utf8");
+  const source = ts.createSourceFile("image.tsx", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const helpers = [];
+  const effects = [];
+  function visit(node) {
+    if (ts.isFunctionDeclaration(node) && ["clamp", "fitZoomFor", "centeredView"].includes(node.name?.text)) helpers.push(node.getText(source));
+    if (ts.isCallExpression(node) && node.expression.getText(source) === "useEffect") {
+      const callback = node.arguments[0]?.getText(source) || "";
+      if (callback.includes("canvas.setViewportTransform") || callback.includes("imageSizeRef.current =")) effects.push(node.getText(source));
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  assert.equal(effects.length, 2, "exercise the real viewport transform and resize effects");
+  const bitmap = createCanvas(320, 240);
+  const pixels = bitmap.getContext("2d");
+  let dimensionWrites = 0;
+  const canvas = {
+    width: 320,
+    height: 240,
+    elements: {
+      setDimensions({ width, height }) {
+        dimensionWrites += 1;
+        bitmap.width = width;
+        bitmap.height = height;
+      },
+      setCSSDimensions() {},
+    },
+    getRetinaScaling: () => 1,
+    calcOffset() {},
+    requestRenderAll() {}, // Deliberately hold the next frame to detect blank pixels before repaint.
+    getWidth: StaticCanvas.prototype.getWidth,
+    getHeight: StaticCanvas.prototype.getHeight,
+    _setDimensionsImpl: StaticCanvas.prototype._setDimensionsImpl,
+    setDimensions: StaticCanvas.prototype.setDimensions,
+    setViewportTransform(transform) { this.viewportTransform = transform; },
+  };
+  const viewport = { clientWidth: 320, clientHeight: 240 };
+  const hookState = [];
+  const observers = new Set();
+  let cursor = 0;
+  const context = vm.createContext({
+    fabricCanvasRef: { current: canvas },
+    viewportRef: { current: viewport },
+    imageSizeRef: { current: null },
+    current: { url: "blob:image", width: 200, height: 100 },
+    effectiveZoom: 100,
+    fitMode: true,
+    view: { x: 60, y: 70 },
+    setFitZoom(value) { context.fitZoom = value; },
+    setView(value) { context.view = value; },
+    useEffect(effect, deps) {
+      const index = cursor++;
+      const previous = hookState[index];
+      if (previous && deps.every((value, offset) => Object.is(value, previous.deps[offset]))) return;
+      previous?.cleanup?.();
+      hookState[index] = { deps, cleanup: effect() };
+    },
+    ResizeObserver: class {
+      constructor(update) { this.update = update; }
+      observe() { observers.add(this); }
+      disconnect() { observers.delete(this); }
+    },
+  });
+  const compiled = ts.transpileModule(`${helpers.join("\n")}\nfunction renderEffects() { ${effects.join(";\n")} }`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  vm.runInContext(compiled, context);
+  return {
+    canvas, context, viewport,
+    render() { cursor = 0; context.renderEffects(); },
+    notifyResize() { for (const observer of observers) observer.update(); },
+    paint() { pixels.fillStyle = "red"; pixels.fillRect(0, 0, bitmap.width, bitmap.height); },
+    alpha: () => pixels.getImageData(10, 10, 1, 1).data[3],
+    dimensionWrites: () => dimensionWrites,
+    cleanup() { for (const hook of hookState) hook.cleanup?.(); },
+  };
+}
+
+test("native image zoom preserves bitmap pixels until the next animation frame", () => {
+  const harness = createImageViewportHarness();
+  try {
+    harness.render();
+    harness.paint();
+    const before = harness.dimensionWrites();
+    harness.context.fitMode = false;
+    for (let step = 0; step < 100; step += 1) {
+      harness.context.effectiveZoom = step % 2 === 0 ? 150 : 80;
+      harness.context.view = { x: step, y: -step };
+      harness.render();
+      harness.notifyResize(); // ResizeObserver also delivers an initial notification on re-subscription.
+      assert.equal(harness.alpha(), 255, `zoom step ${step} must not clear the visible bitmap`);
+      assert.equal(harness.canvas.viewportTransform[0], harness.context.effectiveZoom / 100);
+      assert.equal(harness.canvas.viewportTransform[4], step);
+    }
+    assert.equal(harness.dimensionWrites(), before, "zoom must not reset an unchanged canvas backing store");
+  } finally { harness.cleanup(); }
+});
+
+test("native image viewport resizes once per size change and retains fit and crop centering", () => {
+  const harness = createImageViewportHarness();
+  try {
+    harness.render();
+    const before = harness.dimensionWrites();
+    harness.viewport.clientWidth = 640;
+    harness.notifyResize();
+    assert.equal(harness.dimensionWrites(), before + 1);
+    assert.equal(harness.canvas.getWidth(), 640);
+    assert.equal(harness.context.fitZoom, 192);
+    assert.equal(harness.context.view.x, 128);
+    harness.paint();
+    harness.notifyResize();
+    assert.equal(harness.dimensionWrites(), before + 1, "duplicate resize notifications must not clear pixels");
+    assert.equal(harness.alpha(), 255);
+    harness.context.fitMode = false;
+    harness.context.effectiveZoom = 150;
+    harness.context.current = { url: "blob:cropped", width: 100, height: 80 };
+    harness.render();
+    assert.equal(harness.context.view.x, 245);
+    assert.equal(harness.context.view.y, 60);
+    assert.equal(harness.dimensionWrites(), before + 1, "bitmap edits do not change viewport dimensions");
+  } finally { harness.cleanup(); }
 });
