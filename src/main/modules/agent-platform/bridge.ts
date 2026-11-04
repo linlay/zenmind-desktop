@@ -33,6 +33,7 @@ import { ChatClient } from "./chat-client";
 import { ChatExportClient } from "./chat-export";
 import { ImageCompletion } from "./completion";
 import { PlatformClient } from "./platform-client";
+import { unwrapApiResponse } from "./platform-http-response";
 import type { AgentPlatformRealtimeSocketFactory } from "./realtime/agent-platform-realtime-client";
 import { RealtimeBroker } from "./realtime/realtime-broker";
 import { AssistantRunController } from "./run-controller";
@@ -84,6 +85,31 @@ export class AgentPlatformAssistantBridge {
     this.chats = new ChatClient(this.platform);
     this.exports = new ChatExportClient(this.platform);
     this.completion = new ImageCompletion(this.platform, (request, onRawEvent, strictAttachments, detail) => this.runs.completeText(request, onRawEvent, strictAttachments, detail));
+  }
+
+  async readSkillIcon(id: string): Promise<{ contentType: string; bytes: Uint8Array } | null> {
+    const available = await this.platform.resolvePlatform();
+    if (!available.ok) return null;
+    const init = {
+      headers: this.platform.jsonHeaders(available.token),
+      signal: AbortSignal.timeout(10_000),
+      redirect: "error" as const,
+    };
+    const list = await this.platform.platformFetch(available.baseUrl, "/api/skills", init);
+    if (!list.ok) return null;
+    type SkillIconEntry = { id: string; icon?: string };
+    const data = unwrapApiResponse<{ skills?: SkillIconEntry[]; packages?: SkillIconEntry[] }>(await list.json());
+    const entry = [...(data.skills ?? []), ...(data.packages ?? [])]
+      .find(skill => skill.id.toLowerCase() === id.toLowerCase());
+    const icon = entry?.icon?.trim() || "";
+    if (icon.includes("#") || !["/api/skills/icon", "/api/skill-packages/icon", "/api/admin/skills/file/download"].includes(icon.split("?", 1)[0])) return null;
+    const response = await this.platform.platformFetch(available.baseUrl, icon, init);
+    const contentType = (response.headers.get("Content-Type") || "").toLowerCase();
+    if (!response.ok || !contentType.startsWith("image/")) return null;
+    const maxBytes = 2 * 1024 * 1024;
+    if (Number(response.headers.get("Content-Length")) > maxBytes) return null;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return bytes.byteLength && bytes.byteLength <= maxBytes ? { contentType, bytes } : null;
   }
 
   async startRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> { return this.runs.startRun(request); }

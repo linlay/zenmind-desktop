@@ -14,7 +14,6 @@ import {
   GlobalOutlined,
   MessageOutlined,
   PlusOutlined,
-  PictureOutlined,
   ProjectOutlined,
   RobotOutlined,
 } from "@ant-design/icons";
@@ -113,6 +112,8 @@ import {
 } from "./WorkPanelDocumentHtml";
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
 import { WorkPanelNewTab } from "./WorkPanelNewTab";
+import { FileIcon } from "../components/file-icon";
+import { MaterialIcon } from "../components/icons/MaterialIcon";
 import { WorkPanelTab } from "./WorkPanelTab";
 import {
   isWorkPanelNewTabActive,
@@ -297,16 +298,34 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
   return "";
 }
 
+function WorkPanelSkillIcon({ id }: { id: string }) {
+  const [loaded, setLoaded] = useState<{ id: string; src: string } | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    let objectUrl = "";
+    void window.electronAPI.assistant.readSkillIcon(id).then(icon => {
+      if (disposed || !icon) return;
+      objectUrl = URL.createObjectURL(new Blob([new Uint8Array(icon.bytes)], { type: icon.contentType }));
+      setLoaded({ id, src: objectUrl });
+    }).catch(() => { /* 图标加载失败时保留默认技能图标。 */ });
+    return () => {
+      disposed = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [id]);
+  const src = loaded?.id === id ? loaded.src : "";
+  return src ? (
+    <img src={src} alt="" onError={() => setLoaded(previous => previous?.src === src ? null : previous)} />
+  ) : <MaterialIcon name="bolt" />;
+}
+
 function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
   if (item.descriptor.kind === "web") return <GlobalOutlined />;
   if (item.descriptor.kind === "webapp-ref") return <AppstoreOutlined />;
-  if (item.descriptor.kind === "local-file") return <FileTextOutlined />;
+  if (item.descriptor.kind === "local-file")
+    return <FileIcon size={16} filename={item.descriptor.fileName || item.title} />;
   if (item.descriptor.kind === "native")
-    return item.descriptor.surfaceKey === "local-document" ? (
-      <FileTextOutlined />
-    ) : (
-      <PictureOutlined />
-    );
+    return <FileIcon size={16} filename={String(item.descriptor.context.fileName || item.descriptor.context.relativePath || item.title)} />;
   switch (item.descriptor.module) {
     case "overview":
       return <DashboardOutlined />;
@@ -318,7 +337,14 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
       return <DiffOutlined />;
     case "artifact":
     case "reference":
+      return <FileIcon size={16} filename={item.descriptor.context.relativePath ||
+        resolveChatWorkPanelLocalResourcePath({
+          ownerChatId: item.descriptor.context.chatId,
+          profile: item.descriptor.module,
+          route: item.descriptor.route,
+        }) || item.title} />;
     case "file":
+      return <FileIcon size={16} filename={item.descriptor.context.path || item.title} />;
     case "source":
       return <FileTextOutlined />;
     case "btw":
@@ -331,7 +357,7 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
     case "copilot":
       return <RobotOutlined />;
     case "skill":
-      return <AppstoreOutlined />;
+      return <WorkPanelSkillIcon id={item.descriptor.context.id} />;
   }
 }
 

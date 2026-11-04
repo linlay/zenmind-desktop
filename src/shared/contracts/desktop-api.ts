@@ -1026,6 +1026,7 @@ export interface DesktopApi {
     onChanged: (listener: KanbanChangedListener) => () => void;
   };
   assistant: {
+    readSkillIcon: (id: string) => Promise<{ contentType: string; bytes: Uint8Array } | null>;
     getSettings: () => Promise<AssistantSettingsPublic>;
     consumeFirstInstallBootstrapNavigation: () => Promise<AssistantFirstInstallBootstrapNavigationResult>;
     saveSettings: (input: AssistantSettingsInput) => Promise<AssistantSettingsPublic>;
