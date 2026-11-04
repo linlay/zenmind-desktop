@@ -36,6 +36,7 @@ export type ChatWorkPanelTabContextMenuActionId =
 export type ChatWorkPanelTabContextMenuProfile =
   | "default"
   | "web"
+  | "local-file"
   | "artifact"
   | "reference";
 

@@ -139,7 +139,7 @@ test("WorkPanel Web guests share application cookies and only blur hidden or ina
   assert.match(host, /type: "openBlobPopup"/u);
   assert.match(host, /navigationKind === "blob"/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
-  assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web" \|\| \([\s\S]*?item\.descriptor\.reviewKind === "html"/u);
+  assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web"\}/u);
   assert.match(host, /function workPanelDocumentPath[\s\S]*?module === "file"[\s\S]*?context\.path\.trim\(\)[\s\S]*?context\.relativePath/u);
   assert.match(host, /tooltip=\{documentPath \|\| item\.title\}/u);
   assert.match(tab, /title=\{tooltip \|\| title\}/u);

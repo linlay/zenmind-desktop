@@ -319,6 +319,12 @@ test("Work Panel tab context menu groups every profile without empty separators"
       ]
     },
     {
+      profile: "local-file",
+      expected: [
+        "toggle-fullscreen", "reload", "separator", "reveal-resource", "separator", "close-tab", "close-other-tabs"
+      ]
+    },
+    {
       profile: "artifact",
       expected: [
         "toggle-fullscreen", "reload", "separator", "download-resource",
@@ -422,7 +428,7 @@ test("Work Panel reveal menu uses platform-native file manager labels", async ()
     { platform: "darwin", label: /Finder|访达/u },
     { platform: "win32", label: /Explorer|文件资源管理器/u },
     { platform: "linux", label: /File Manager|文件管理器/u },
-  ]) {
+  ]) for (const profile of ["artifact", "local-file"]) {
     const handlers = new Map();
     const sender = {};
     const ownerWindow = {
@@ -450,7 +456,7 @@ test("Work Panel reveal menu uses platform-native file manager labels", async ()
       mode: "work-panel",
       x: 1,
       y: 2,
-      profile: "artifact",
+      profile,
       isFullscreen: false,
       canClose: true,
       canCloseOthers: false,
