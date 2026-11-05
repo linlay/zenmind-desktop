@@ -113,6 +113,7 @@ export interface DesktopActionRendererRequest {
   action: string;
   args: Record<string, unknown>;
   source?: {
+    workPanelScope?: { kind: "draft"; draftId: string };
     runId?: string;
     chatId?: string;
     agentKey?: string;
@@ -448,6 +449,7 @@ export interface AssistantProjectCreationGroup {
 export interface AssistantProjectCreationModel {
   key: string;
   name?: string;
+  icon?: string;
 }
 
 export interface AssistantProjectCreationOptions {

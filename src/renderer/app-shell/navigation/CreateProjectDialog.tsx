@@ -1,4 +1,5 @@
 import { RobotOutlined, CodeOutlined, DatabaseOutlined, ApiOutlined } from "@ant-design/icons";
+import { Select } from "antd";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -19,6 +20,7 @@ import {
 } from "../../../shared/project-creation";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 
+import { ModelIcon } from "../../components/icons/ModelIcon";
 import { useI18n } from "../../i18n/useI18n";
 import { projectCreationOptionsCache } from "./projectCreationOptionsCache";
 
@@ -352,27 +354,32 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
             ) : null}
 
             {type?.modelRequired ? (
-              <label className="sidebar-website-dialog-field">
-                <span>{t("sidebar.project.model")}</span>
-                <select
-                  value={effectiveModelKey}
+              <div className="sidebar-website-dialog-field">
+                <span id="sidebar-project-model-label">{t("sidebar.project.model")}</span>
+                <Select
+                  className="sidebar-project-model-select"
+                  aria-labelledby="sidebar-project-model-label"
+                  value={effectiveModelKey || undefined}
+                  placeholder={t("sidebar.project.modelPlaceholder")}
                   disabled={pending}
                   aria-invalid={!effectiveModelKey}
-                  onChange={(event) => update({ ...selection, modelKey: event.target.value })}
-                >
-                  {!effectiveModelKey ? (
-                    <option value="">{t("sidebar.project.modelPlaceholder")}</option>
-                  ) : null}
-                  {modelChoices.map((model) => (
-                    <option value={model.key} key={model.key}>
-                      {model.name || model.key}
-                    </option>
-                  ))}
-                </select>
+                  getPopupContainer={(trigger) => trigger.parentElement!}
+                  onChange={(modelKey: string) => update({ ...selection, modelKey })}
+                  options={modelChoices.map((model) => ({
+                    value: model.key,
+                    title: model.name || model.key,
+                    label: (
+                      <span className="sidebar-project-model-label">
+                        <ModelIcon icon={model.icon} />
+                        <span className="sidebar-project-model-name">{model.name || model.key}</span>
+                      </span>
+                    ),
+                  }))}
+                />
                 {defaultModelMissing && !selection.modelKey ? (
                   <small className="sidebar-project-dialog-hint">{t("sidebar.project.modelDefaultMissing")}</small>
                 ) : null}
-              </label>
+              </div>
             ) : null}
           </>
         )}

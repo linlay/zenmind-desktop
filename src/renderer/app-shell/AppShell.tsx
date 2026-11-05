@@ -59,6 +59,7 @@ import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
 import type { MainChatCommitSnapshot } from "../service-webview/ServiceWebviewSurface";
+import { readAgentWebclientNewChatSource } from "../../shared/canonical-chat-sync";
 import {
   clearCopilotDockSessionSnapshot,
   readCopilotDockSessionSnapshot,
@@ -620,6 +621,7 @@ export function AppShell() {
   const assistantNavAgentsRefreshIdRef = useRef(0);
   const chatDefaultAgentMigrationRef = useRef("");
   const registeredMainChatSurfaceRef = useRef<MainChatCommitSnapshot | null>(null);
+  const pendingDraftWorkPanelPromotionRef = useRef<{ registrationId: string; guestWebContentsId: number; agentKey: string; newChat: string; chatId: string } | null>(null);
   const registeredMainChatRouteRef = useRef("");
   const lastMainChatCommitRef = useRef<Pick<
     MainChatCommitSnapshot,
@@ -4131,7 +4133,7 @@ export function AppShell() {
     const result = reduceWorkPanelCommand(currentState, normalizedCommand);
     if (result.ok) {
       if (command.type === "openItem" || command.type === "openBlobPopup" || command.type === "activateItem" ||
-          command.type === "closeWorkspace" || command.type === "hideWorkspace" || command.type === "adoptLocalDocumentWorkspace") {
+          command.type === "closeWorkspace" || command.type === "hideWorkspace" || command.type === "adoptLocalDocumentWorkspace" || command.type === "adoptDraftWorkspace") {
         setWorkPanelMainChatOwnerKey(current => current === command.ownerChatId ? null : current);
       }
       for (const dialog of previousState.dialogItems ?? []) {
@@ -4307,6 +4309,15 @@ export function AppShell() {
     t,
   ]);
 
+  useEffect(() => window.electronAPI.canonicalChatSync.onRequest((request) => {
+    const snapshot = registeredMainChatSurfaceRef.current;
+    if (snapshot?.identity.kind === "new" && snapshot.identity.agentKey === request.agentKey &&
+        snapshot.identity.newChat === request.newChat && snapshot.registrationId === request.registrationId &&
+        snapshot.webContentsId === request.guestWebContentsId && registeredMainChatRouteRef.current === currentRoute) {
+      pendingDraftWorkPanelPromotionRef.current = request;
+    }
+  }), [currentRoute]);
+
   const handleMainChatSurfaceRegistrationChange = useCallback((
     snapshot: MainChatCommitSnapshot | null,
   ) => {
@@ -4315,6 +4326,18 @@ export function AppShell() {
       registeredMainChatRouteRef.current = "";
       setCommittedMainChatSnapshot(null);
       return;
+    }
+    const promotion = pendingDraftWorkPanelPromotionRef.current;
+    if (snapshot.identity.kind === "canonical" && promotion && promotion.chatId === snapshot.identity.chatId &&
+        promotion.registrationId === snapshot.registrationId && promotion.guestWebContentsId === snapshot.webContentsId &&
+        promotion.agentKey === snapshot.identity.agentKey) {
+      const draftOwnerKey = localDocumentWorkPanelOwnerForRoute(workPanelStateRef.current,
+        `/agent/${encodeURIComponent(promotion.agentKey)}?newChat=${encodeURIComponent(promotion.newChat)}`);
+      const workspace = workPanelStateRef.current.workspaces.find(item => item.ownerChatId === draftOwnerKey);
+      if (draftOwnerKey && !workspace?.items.some(item => item.descriptor.kind === "native" && item.descriptor.surfaceKey === "local-document")) {
+        dispatchWorkPanelCommand({ type: "adoptDraftWorkspace", ownerChatId: snapshot.identity.chatId, draftOwnerKey });
+      }
+      pendingDraftWorkPanelPromotionRef.current = null;
     }
     registeredMainChatSurfaceRef.current = snapshot;
     registeredMainChatRouteRef.current = currentRoute;
@@ -4336,15 +4359,16 @@ export function AppShell() {
       setWorkPanelOpenError("");
       completeChatWorkPanelOpen(pending.chatId, pending.agentKey, pending.action, pending.explicitlyOpened);
     }
-  }, [clearPendingChatWorkPanelOpen, completeChatWorkPanelOpen, currentRoute]);
+  }, [clearPendingChatWorkPanelOpen, completeChatWorkPanelOpen, currentRoute, dispatchWorkPanelCommand]);
 
   useEffect(() => {
     const registered = registeredMainChatSurfaceRef.current;
+    const draft = readAgentWebclientNewChatSource(currentRoute);
     if (
-      registered?.identity.kind !== "canonical" ||
-      registeredMainChatRouteRef.current !== currentRoute ||
-      registered.identity.chatId !== activeChatRouteInfo.chatId ||
-      registered.identity.agentKey !== activeChatRouteInfo.agentKey.trim()
+      !registered || registeredMainChatRouteRef.current !== currentRoute ||
+      (registered.identity.kind === "canonical"
+        ? registered.identity.chatId !== activeChatRouteInfo.chatId || registered.identity.agentKey !== activeChatRouteInfo.agentKey.trim()
+        : !draft || draft.agentKey !== registered.identity.agentKey || draft.newChat !== registered.identity.newChat)
     ) {
       registeredMainChatSurfaceRef.current = null;
       registeredMainChatRouteRef.current = "";

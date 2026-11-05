@@ -93,6 +93,7 @@ export function createGuestResolution(options: Pick<BrowserSurfaceRegistryOption
         ...(surface.pageRoute ? { pageRoute: surface.pageRoute } : {}),
         ...(surface.pageRouteIdentity ? { pageRouteIdentity: surface.pageRouteIdentity } : {}),
         ...(surface.documentSource ? { documentSource: surface.documentSource } : {}),
+        ...(surface.draftOwnerKey ? { draftOwnerKey: surface.draftOwnerKey } : {}),
         ...(surface.ownerChatId ? { ownerChatId: surface.ownerChatId } : {}),
         ...(surface.presentationScope ? { presentationScope: surface.presentationScope } : {}),
         surfaceRole: surface.surfaceRole,

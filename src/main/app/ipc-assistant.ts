@@ -28,6 +28,7 @@ export function registerAssistantRuntimeIpc(options: MainIpcRegistrationOptions)
     desktopActionOptions,
     app,
     mainWindow: options.getMainWindow(),
+    getMainWindow: options.getMainWindow,
     shell: options.shell,
     platform: options.platform,
     getCurrentPageSnapshot: options.getCurrentPageSnapshot,

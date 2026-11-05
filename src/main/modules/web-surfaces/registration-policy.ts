@@ -1,4 +1,5 @@
 import type { SurfaceRole } from "../../../shared/surface-identity";
+import { isLocalDocumentDraftOwnerKey } from "../../../shared/work-panel";
 import { normalizeWorkPanelDocumentSource } from "../../../shared/work-panel-document-source";
 import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
 import { readAgentWebclientCanonicalChatSource, readAgentWebclientNewChatSource } from "../../../shared/canonical-chat-sync";
@@ -283,6 +284,13 @@ export function createRegistrationPolicy(options: Pick<BrowserSurfaceRegistryOpt
       (input.pageRouteIdentity !== undefined && typeof input.pageRouteIdentity !== "string") ||
       (input.ownerChatId !== undefined && typeof input.ownerChatId !== "string"))
       return { ok: false, check: "invalid_optional_fields" };
+    if (input.draftOwnerKey !== undefined &&
+      (typeof input.draftOwnerKey !== "string" || !isLocalDocumentDraftOwnerKey(input.draftOwnerKey) ||
+        input.ownerChatId || input.documentSource || input.serviceId !== "agent-webclient" ||
+        input.surfaceLevel !== "child" || input.parentSurfaceId !== MAIN_CHAT_SURFACE_ID ||
+        !["skill", "file", "reference"].includes(input.surfaceRole))) {
+      return { ok: false, check: "invalid_optional_fields" };
+    }
     if (input.documentSource !== undefined) {
       const document = normalizeWorkPanelDocumentSource(input.documentSource);
       if (!document || input.serviceId !== "agent-webclient" || input.surfaceLevel !== "child" ||

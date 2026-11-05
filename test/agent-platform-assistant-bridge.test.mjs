@@ -99,6 +99,52 @@ function makeBridge(overrides = {}) {
   return { bridge, events };
 }
 
+test("skill icons use installed skill metadata and authenticated image requests", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return calls.length === 1
+      ? Response.json({ skills: [{ id: "PDF", icon: "/api/skills/icon?id=PDF" }] })
+      : new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "image/png" } });
+  };
+  try {
+    const { bridge } = makeBridge();
+    const result = await bridge.readSkillIcon("pdf");
+    assert.equal(result.contentType, "image/png");
+    assert.deepEqual([...result.bytes], [1, 2, 3]);
+    assert.deepEqual(calls.map(call => call.url), ["http://127.0.0.1:18888/api/skills", "http://127.0.0.1:18888/api/skills/icon?id=PDF"]);
+    assert.ok(calls.every(call => call.init.headers.Authorization === "Bearer desktop-token" && call.init.redirect === "error"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("skill icons reject missing icons, unsafe URLs, non-images and oversized images", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const scenario of [
+      { icon: "" },
+      { icon: "https://example.com/icon.png" },
+      { icon: "/api/skills/icon?id=pdf#fragment" },
+      { icon: "/api/skills/icon?id=pdf", type: "application/json" },
+      { icon: "/api/skill-packages/icon?id=pdf", type: "image/png", length: String(3 * 1024 * 1024) },
+    ]) {
+      let calls = 0;
+      globalThis.fetch = async () => ++calls === 1
+        ? Response.json({ packages: [{ id: "pdf", icon: scenario.icon }] })
+        : new Response("invalid", { headers: { "Content-Type": scenario.type, "Content-Length": scenario.length || "7" } });
+      const { bridge } = makeBridge();
+      assert.equal(await bridge.readSkillIcon("pdf"), null);
+      assert.equal(calls, scenario.type ? 2 : 1);
+    }
+    const { bridge } = makeBridge({ getServiceState: async () => ({ status: "stopped", message: "offline", healthMeta: {} }) });
+    assert.equal(await bridge.readSkillIcon("pdf"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function makeWakeLockRecorder() {
   const calls = [];
   return {

@@ -68,6 +68,29 @@ function registration(role, guestId, generation) {
   };
 }
 
+test("draft viewer registration preserves host-only scope without assigning a Chat owner", () => {
+  const runtime = createHarness();
+  assert.deepEqual(runtime.register(runtime.sender(1), registration("main-chat", 101, "main")), { ok: true });
+  const key = "reference:upload";
+  const input = {
+    ...registration("selection-explain", 102, "draft-viewer"),
+    ...createChatChildSurfaceIdentity("reference", key, ""),
+    surfaceIdentityKey: key,
+    surfaceType: "agent-management",
+    pageRoute: "/resource/helper",
+    pageRouteIdentity: "/resource/helper?chatId=upload-chat&file=report.docx",
+    draftOwnerKey: "file-draft:helper:1793759598386",
+  };
+  delete input.ownerChatId;
+  assert.deepEqual(runtime.register(runtime.sender(1), input), { ok: true });
+  const target = runtime.registry.resolveWebviewSurfaceTarget(102);
+  assert.equal(target.draftOwnerKey, input.draftOwnerKey);
+  assert.equal(target.ownerChatId, undefined);
+  for (const patch of [{ ownerChatId: input.draftOwnerKey }, { draftOwnerKey: "chat-1" }, { surfaceRole: "debug" }]) {
+    assert.equal(runtime.register(runtime.sender(1), { ...input, ...patch }).ok, false);
+  }
+});
+
 test("an auxiliary window cannot claim Main Chat before the main guest registers or after it is destroyed", () => {
   const runtime = createHarness();
   const main = runtime.sender(1);

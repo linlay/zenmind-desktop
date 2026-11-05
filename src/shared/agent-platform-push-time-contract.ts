@@ -39,12 +39,14 @@ const STRUCTURED_PUSH_TIME_FIELDS = [
   "publishedAt",
 ] as const;
 
-const ARCHIVE_RESTORED_REQUIRED_SUMMARY_FIELDS = [
-  "createdAt",
-  "updatedAt",
-  "lastRunAt",
-  "archivedAt",
-] as const;
+// agent-platform broadcasts the restored Chat as an active Chat summary
+// (`ChatSummaryResponse`): it carries `createdAt`/`updatedAt` but not the
+// archived-record instants `lastRunAt`/`archivedAt`. Requiring those dropped the
+// whole `archive.restored` Push before any consumer saw it, so the restored Chat
+// never re-appeared in the Desktop sidebar. Any structured instant that is
+// present (including a future `lastRunAt`/`archivedAt`) is still validated by
+// `findInvalidStructuredPushTime`.
+const ARCHIVE_RESTORED_REQUIRED_SUMMARY_FIELDS = ["createdAt", "updatedAt"] as const;
 
 function isObjectRecord(value: unknown): value is ObjectRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);

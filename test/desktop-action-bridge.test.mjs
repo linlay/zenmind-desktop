@@ -590,6 +590,34 @@ test("desktop assistant chat forwards a general message without business prompts
   assert.equal(oversized.error.code, "assistant_message_too_long");
 });
 
+test("draft WorkPanel action scope is host-only and is not forwarded as a Chat ID", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const draftId = "file-draft:agent-1:1793759598386";
+  const source = { workPanelScope: { kind: "draft", draftId } };
+  const rendererCalls = [];
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.callRendererAction = async request => {
+    rendererCalls.push(request);
+    const result = createWorkPanelRendererResult(request.action);
+    result.state.ownerChatId = draftId;
+    return { ok: true, requestId: request.requestId, action: request.action, result };
+  };
+  const result = await handleAgentWebclientWorkPanelActionRequest(options, {
+    action: "openItem", ownerChatId: "", draftOwnerKey: draftId,
+    args: { descriptor: { kind: "web", url: "https://docs.test/" } },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(rendererCalls[0].source, source);
+  assert.equal(rendererCalls[0].source.chatId, undefined);
+  const external = await handleDesktopActionRequest(options, {
+    action: "desktop.workpanel.openTab", source,
+    args: { descriptor: { kind: "web", url: "https://docs.test/" } },
+    permissionMode: "full_access",
+  });
+  assert.equal(external.error.code, "forbidden");
+  assert.equal(rendererCalls.length, 1);
+});
+
 test("trusted Agent WebClient WorkPanel calls bypass external confirmation while public actions keep it", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const rendererCalls = [];

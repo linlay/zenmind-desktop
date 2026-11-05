@@ -66,6 +66,9 @@ export async function handleActionCallRaw(
   if (AGENT_PLATFORM_ONLY_ACTIONS.has(action) && invocation.kind !== "agentPlatform") {
     return fail(action, "forbidden", `${action} is available only to an authorized internal Agent Platform Run.`);
   }
+  if (request.source?.workPanelScope && invocation.kind !== "agentWebclientWorkPanel") {
+    return fail(action, "forbidden", "Draft WorkPanel scopes are host-only.");
+  }
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);
   const reservedField = findReservedArgField(args);
@@ -227,6 +230,7 @@ export async function handleAgentWebclientWorkPanelActionRequest(
   input: {
     requestId?: string;
     action: AgentWebclientWorkPanelAction;
+    draftOwnerKey?: string;
     ownerChatId: string;
     args?: Record<string, unknown>;
   }
@@ -238,8 +242,9 @@ export async function handleAgentWebclientWorkPanelActionRequest(
   const bridgeAction = method as AgentWebclientWorkPanelAction;
   const action = AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS[bridgeAction];
   const ownerChatId = typeof input.ownerChatId === "string" ? input.ownerChatId.trim() : "";
-  if (!ownerChatId) {
-    return fail(action, "source_chat_required", "A trusted WorkPanel owner chat is required.");
+  const draftId = input.draftOwnerKey;
+  if (!ownerChatId && !draftId) {
+    return fail(action, "source_chat_required", "A trusted WorkPanel owner is required.");
   }
   return handleActionCall(options, {
     ...(input.requestId ? { requestId: input.requestId } : {}),
@@ -247,7 +252,7 @@ export async function handleAgentWebclientWorkPanelActionRequest(
     args: bridgeAction === "openItem"
       ? asRecord(input.args)
       : { tabId: readString(asRecord(input.args), "itemId") },
-    source: { chatId: ownerChatId }
+    source: draftId ? { workPanelScope: { kind: "draft", draftId } } : { chatId: ownerChatId }
   }, { kind: "agentWebclientWorkPanel" });
 }
 

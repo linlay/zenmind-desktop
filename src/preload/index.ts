@@ -313,6 +313,7 @@ const api: DesktopApi = {
     }
   },
   assistant: {
+    readSkillIcon: (id: string) => ipcRenderer.invoke("assistant.readSkillIcon", id),
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),
     consumeFirstInstallBootstrapNavigation: () =>
       ipcRenderer.invoke("assistant.consumeFirstInstallBootstrapNavigation"),

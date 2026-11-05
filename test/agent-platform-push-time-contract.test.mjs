@@ -27,11 +27,17 @@ test("agent-platform push time contract accepts every documented push shape", ()
     ["chat.archived", {}, undefined],
     ["archive.restored", {
       summary: {
+        pinned: false,
+        primary: false,
+        chatId: "chat_restored",
+        chatName: "Restored",
+        agentKey: "agent_a",
+        mode: "GENERAL",
         createdAt: EPOCH_MS,
         updatedAt: EPOCH_MS,
-        lastRunAt: EPOCH_MS,
-        archivedAt: EPOCH_MS,
-        readAt: null,
+        lastRunId: "run_restored",
+        lastRunContent: "restored response",
+        read: { isRead: false },
       },
     }, undefined],
     ["archive.deleted", {}, undefined],
@@ -50,12 +56,47 @@ test("agent-platform push time contract accepts every documented push shape", ()
   assert.equal(readAgentPlatformPushEpochMillis("run.complete", { finishedAt: EPOCH_MS }), EPOCH_MS);
 });
 
+test("archive.restored accepts the summary agent-platform actually broadcasts", () => {
+  // Captured from `internal/server/handler_archive.go` restoreArchives: the
+  // payload carries the active Chat summary, which has no lastRunAt/archivedAt.
+  // The Desktop realtime broker drops the whole Push when this contract fails,
+  // so rejecting it left the sidebar without the restored Chat.
+  const broadcastPayload = {
+    agentKey: "agent-a",
+    chatId: "chat-capture",
+    summary: {
+      pinned: false,
+      primary: false,
+      chatId: "chat-capture",
+      chatName: "hello",
+      agentKey: "agent-a",
+      mode: "GENERAL",
+      createdAt: 1793861040742,
+      updatedAt: 1700000003000,
+      lastRunId: "run-chat-capture",
+      lastRunContent: "archived response",
+      read: { isRead: false },
+      usage: { promptTokens: 3, completionTokens: 5, totalTokens: 8 },
+    },
+  };
+  assert.equal(
+    validateAgentPlatformPushTimeContract("archive.restored", broadcastPayload),
+    undefined,
+  );
+});
+
 test("agent-platform push time contract rejects missing, malformed, and legacy time fields", () => {
   assert.equal(validateAgentPlatformPushTimeContract("run.started", {}), "startedAt");
   assert.equal(validateAgentPlatformPushTimeContract("archive.restored", {}), "summary");
   assert.equal(
     validateAgentPlatformPushTimeContract("archive.restored", {
-      summary: { createdAt: EPOCH_MS, updatedAt: EPOCH_MS, lastRunAt: EPOCH_MS },
+      summary: { createdAt: EPOCH_MS },
+    }),
+    "summary.updatedAt",
+  );
+  assert.equal(
+    validateAgentPlatformPushTimeContract("archive.restored", {
+      summary: { createdAt: EPOCH_MS, updatedAt: EPOCH_MS, archivedAt: String(EPOCH_MS) },
     }),
     "summary.archivedAt",
   );

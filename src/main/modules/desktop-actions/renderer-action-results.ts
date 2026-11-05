@@ -345,7 +345,7 @@ export async function callRendererAction(
     const state = source.state === undefined ? undefined : readWorkPanelWorkspace(source.state);
     const workspaceId = readString(source, "workspaceId");
     if (source.ok !== true || !workspaceId || state === null ||
-        (state && (state.workspaceId !== workspaceId || state.ownerChatId !== request.source?.chatId))) {
+        (state && (state.workspaceId !== workspaceId || state.ownerChatId !== (request.source?.workPanelScope?.draftId || request.source?.chatId)))) {
       return fail(request.action, "invalid_action_result", "WorkPanel renderer returned an invalid bridge result.");
     }
     // The WebClient bridge expects its own success envelope, not the public

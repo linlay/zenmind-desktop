@@ -14,7 +14,6 @@ import {
   GlobalOutlined,
   MessageOutlined,
   PlusOutlined,
-  PictureOutlined,
   ProjectOutlined,
   RobotOutlined,
 } from "@ant-design/icons";
@@ -39,6 +38,7 @@ import type {
 } from "../../shared/work-panel";
 import {
   isLocalDocumentDraftOwnerKey,
+  isDraftWorkPanelDescriptor,
   normalizeWorkPanelWebUrl,
 } from "../../shared/work-panel";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../shared/sso";
@@ -112,6 +112,8 @@ import {
 } from "./WorkPanelDocumentHtml";
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
 import { WorkPanelNewTab } from "./WorkPanelNewTab";
+import { FileIcon } from "../components/file-icon";
+import { MaterialIcon } from "../components/icons/MaterialIcon";
 import { WorkPanelTab } from "./WorkPanelTab";
 import {
   isWorkPanelNewTabActive,
@@ -296,16 +298,34 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
   return "";
 }
 
+function WorkPanelSkillIcon({ id }: { id: string }) {
+  const [loaded, setLoaded] = useState<{ id: string; src: string } | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    let objectUrl = "";
+    void window.electronAPI.assistant.readSkillIcon(id).then(icon => {
+      if (disposed || !icon) return;
+      objectUrl = URL.createObjectURL(new Blob([new Uint8Array(icon.bytes)], { type: icon.contentType }));
+      setLoaded({ id, src: objectUrl });
+    }).catch(() => { /* 图标加载失败时保留默认技能图标。 */ });
+    return () => {
+      disposed = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [id]);
+  const src = loaded?.id === id ? loaded.src : "";
+  return src ? (
+    <img src={src} alt="" onError={() => setLoaded(previous => previous?.src === src ? null : previous)} />
+  ) : <MaterialIcon name="bolt" />;
+}
+
 function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
   if (item.descriptor.kind === "web") return <GlobalOutlined />;
   if (item.descriptor.kind === "webapp-ref") return <AppstoreOutlined />;
-  if (item.descriptor.kind === "local-file") return <FileTextOutlined />;
+  if (item.descriptor.kind === "local-file")
+    return <FileIcon size={16} filename={item.descriptor.fileName || item.title} />;
   if (item.descriptor.kind === "native")
-    return item.descriptor.surfaceKey === "local-document" ? (
-      <FileTextOutlined />
-    ) : (
-      <PictureOutlined />
-    );
+    return <FileIcon size={16} filename={String(item.descriptor.context.fileName || item.descriptor.context.relativePath || item.title)} />;
   switch (item.descriptor.module) {
     case "overview":
       return <DashboardOutlined />;
@@ -317,7 +337,14 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
       return <DiffOutlined />;
     case "artifact":
     case "reference":
+      return <FileIcon size={16} filename={item.descriptor.context.relativePath ||
+        resolveChatWorkPanelLocalResourcePath({
+          ownerChatId: item.descriptor.context.chatId,
+          profile: item.descriptor.module,
+          route: item.descriptor.route,
+        }) || item.title} />;
     case "file":
+      return <FileIcon size={16} filename={item.descriptor.context.path || item.title} />;
     case "source":
       return <FileTextOutlined />;
     case "btw":
@@ -330,7 +357,7 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
     case "copilot":
       return <RobotOutlined />;
     case "skill":
-      return <AppstoreOutlined />;
+      return <WorkPanelSkillIcon id={item.descriptor.context.id} />;
   }
 }
 
@@ -2335,8 +2362,9 @@ export function WorkPanelHost({
     () =>
       registerDesktopActionProviderForScope("global", async (request) => {
         if (!request.action.startsWith("desktop.workpanel.")) return null;
-        const ownerChatId = request.source?.chatId?.trim() || "";
-        if (!ownerChatId || ownerChatId.startsWith("file-draft:"))
+        const draftId = request.source?.workPanelScope?.kind === "draft" ? request.source.workPanelScope.draftId : "";
+        const ownerChatId = draftId || request.source?.chatId?.trim() || "";
+        if (!ownerChatId || (ownerChatId.startsWith("file-draft:") && (!draftId || !isLocalDocumentDraftOwnerKey(draftId))))
           return actionError(
             "source_chat_required",
             "A trusted canonical source.chatId is required.",
@@ -2468,7 +2496,7 @@ export function WorkPanelHost({
             : { ok: false as const, error: publicResult.error };
         };
         const ensureTrustedWorkspace = () => {
-          if (current()) return null;
+          if (current() || draftId) return null;
           if (!ownerAgentKey) {
             return actionError(
               "source_owner_required",
@@ -3285,10 +3313,11 @@ export function WorkPanelHost({
                     !mainChatActive &&
                     !newTabActive &&
                     workspace.activeItemId === item.itemId;
+                  const draftWorkspace = isLocalDocumentDraftOwnerKey(workspace.ownerChatId);
                   if (
                     item.descriptor.kind === "webclient" &&
-                    (isLocalDocumentDraftOwnerKey(workspace.ownerChatId) ||
-                      (visible && !activeChatId))
+                    ((draftWorkspace && !isDraftWorkPanelDescriptor(item.descriptor)) ||
+                      (!draftWorkspace && visible && !activeChatId))
                   )
                     return null;
                   // Read-only observers belong to the visible, committed Main Chat.
@@ -3487,7 +3516,8 @@ export function WorkPanelHost({
                         <ServiceWebviewSurface
                           active={active}
                           embedPath={item.descriptor.route}
-                          documentSource={documentSourceFromWebclientDescriptor(
+                          draftOwnerKey={draftWorkspace ? workspace.ownerChatId : undefined}
+                          documentSource={draftWorkspace ? undefined : documentSourceFromWebclientDescriptor(
                             item.descriptor,
                           )}
                           hostTheme={
@@ -3496,7 +3526,7 @@ export function WorkPanelHost({
                               : "light"
                           }
                           loadInitialEmbeddedUrlDirectly
-                          ownerChatId={workspace.ownerChatId}
+                          ownerChatId={draftWorkspace ? undefined : workspace.ownerChatId}
                           onAgentWebclientCurrentResourceAction={
                             supportsLocalResourceActions
                               ? (action, resource) =>
@@ -3554,7 +3584,7 @@ export function WorkPanelHost({
                           surfaceIdentity={createChatChildSurfaceIdentity(
                             item.descriptor.module,
                             item.stableKey,
-                            workspace.ownerChatId,
+                            draftWorkspace ? "" : workspace.ownerChatId,
                           )}
                           surfaceIdentityKey={item.stableKey}
                           surfaceLabel={item.title}

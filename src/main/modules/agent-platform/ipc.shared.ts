@@ -278,6 +278,7 @@ export type FramePortOptions = {
   ): Promise<CanonicalChatSyncResult>;
   dispatchWorkPanel(input: {
     action: "openItem" | "activateItem" | "closeItem";
+    draftOwnerKey?: string;
     ownerChatId: string;
     args: Record<string, unknown>;
   }): Promise<WorkPanelBridgeResult>;

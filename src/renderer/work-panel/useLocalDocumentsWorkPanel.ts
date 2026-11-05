@@ -59,9 +59,7 @@ export function localDocumentWorkPanelOwnerForRoute(state: WorkPanelState, route
   const workspace = state.workspaces.find(item => identity.kind === "canonical"
     ? item.ownerChatId === ownerKey
     : item.workspaceId === workPanelWorkspaceId(ownerKey));
-  return workspace?.items.some(item => item.descriptor.kind === "native" &&
-    item.descriptor.surfaceKey === "local-document" && item.descriptor.context.agentKey === identity.agentKey)
-    ? workspace.ownerChatId : null;
+  return workspace?.ownerChatId ?? null;
 }
 
 /** Files preview in a local draft, then adopt the first normal Query's real Chat. */

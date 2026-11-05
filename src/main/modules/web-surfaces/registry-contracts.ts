@@ -197,6 +197,7 @@ export type PendingSurfaceRegistrationDiagnostic = {
 };
 
 export type RegisteredWebviewSurfaceTarget = {
+  draftOwnerKey?: string;
   documentSource?: EmbeddedCdpSurfaceRegistration["documentSource"];
   registrationId: string;
   surfaceId: string;

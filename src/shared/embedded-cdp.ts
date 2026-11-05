@@ -73,6 +73,8 @@ export type EmbeddedCdpSurfaceRegistration = SurfaceIdentity & {
   pageRouteIdentity?: string;
   /** Host-owned document identity. Never accepted from guest navigation or exposed in diagnostics. */
   documentSource?: WorkPanelDocumentSource;
+  /** Host-only draft grouping, never a backend Chat identity. */
+  draftOwnerKey?: string;
   ownerChatId?: string;
   presentationScope?: "main-workspace" | "workpanel";
   label: string;

@@ -3730,6 +3730,13 @@
   line-height: 1;
 }
 
+.chat-work-panel-tab-icon > img,
+.chat-work-panel-tab-icon > svg {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
 .chat-work-panel-tab-icon.is-loading {
   color: var(--work-panel-tab-focus);
 }

@@ -48,6 +48,7 @@ export type WorkPanelState = {
 
 export type WorkPanelCommand =
   | { type: "adoptLocalDocumentWorkspace"; ownerChatId: string; draftOwnerKey: string; documents: LocalDocumentItem[] }
+  | { type: "adoptDraftWorkspace"; draftOwnerKey: string; ownerChatId: string }
   | { type: "setDialogPresentation"; ownerChatId: string; itemId: string; dialog: WorkPanelDialogPresentation | null; restoreUrl?: string }
   | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; explicitlyOpened?: boolean; webInstanceId?: string }
   | { type: "openBlobPopup"; ownerChatId: string; sourceItemId: string; url: string }
@@ -612,7 +613,24 @@ export function isLocalDocumentDraftOwnerKey(value: string): boolean {
   } catch { return false; }
 }
 
-function adoptLocalDocumentWorkspace(state: WorkPanelState, command: Extract<WorkPanelCommand, { type: "adoptLocalDocumentWorkspace" }>): WorkPanelCommandResult {
+export function isDraftWorkPanelDescriptor(descriptor: WorkPanelItemDescriptor): boolean {
+  const normalized = normalizeDescriptor(descriptor)?.descriptor;
+  if (!normalized) return false;
+  if (normalized.kind === "web") return true;
+  if (normalized.kind === "native") {
+    return normalized.surfaceKey === "local-document";
+  }
+  if (normalized.kind === "webclient" && normalized.module === "reference") {
+    return Boolean(normalized.context.agentKey && normalized.context.chatId && normalized.context.referenceId) &&
+      Object.keys(normalized.context).every(key => ["agentKey", "chatId", "referenceId", "relativePath"].includes(key));
+  }
+  return normalized.kind === "webclient" &&
+    (normalized.module === "skill" || normalized.module === "file") &&
+    Object.keys(normalized.context).every(key =>
+      (normalized.module === "skill" ? ["id"] : ["agentKey", "path", "relativePath"]).includes(key));
+}
+
+function adoptLocalDocumentWorkspace(state: WorkPanelState, command: Extract<WorkPanelCommand, { type: "adoptLocalDocumentWorkspace" | "adoptDraftWorkspace" }>): WorkPanelCommandResult {
   const ownerChatId = cleanIdentity(command.ownerChatId);
   if (!ownerChatId || ownerChatId.startsWith("file-draft:") || !isLocalDocumentDraftOwnerKey(command.draftOwnerKey)) {
     return fail(state, "invalid_request", "local files require a valid draft and canonical Chat");
@@ -623,7 +641,11 @@ function adoptLocalDocumentWorkspace(state: WorkPanelState, command: Extract<Wor
     ? { ok: true, workspaceId: target.workspaceId, state: target, nextState: state }
     : fail(state, "target_unavailable", "local draft workspace is unavailable");
   const documents = new Map<string, LocalDocumentItem>();
-  for (const raw of command.documents) {
+  if (command.type === "adoptDraftWorkspace" && draft.items.some(item =>
+      item.descriptor.kind === "native" && item.descriptor.surfaceKey === "local-document")) {
+    return fail(state, "capability_denied", "local files require trusted document promotion");
+  }
+  for (const raw of command.type === "adoptLocalDocumentWorkspace" ? command.documents : []) {
     const document = normalizeLocalDocumentContext({ ...raw });
     if (!document || document.ownerChatId !== ownerChatId || document.newChat !== undefined || documents.has(document.documentId)) {
       return fail(state, "capability_denied", "local file promotion does not match the canonical Chat");
@@ -633,7 +655,11 @@ function adoptLocalDocumentWorkspace(state: WorkPanelState, command: Extract<Wor
   const items: WorkPanelItem[] = [];
   for (const item of draft.items) {
     if (item.descriptor.kind !== "native" || item.descriptor.surfaceKey !== "local-document") {
-      return fail(state, "capability_denied", "only local file previews can leave a draft workspace");
+      if (!isDraftWorkPanelDescriptor(item.descriptor)) {
+        return fail(state, "capability_denied", "Chat-dependent items cannot leave a draft workspace");
+      }
+      items.push(item);
+      continue;
     }
     const original = normalizeLocalDocumentContext(item.descriptor.context);
     const document = original && documents.get(original.documentId);
@@ -778,14 +804,14 @@ function replaceReviewSession(
 
 function reduceWorkPanelCommandCore(
   state: WorkPanelState,
-  command: Exclude<WorkPanelCommand, { type: "setDialogPresentation" | "adoptLocalDocumentWorkspace" }>,
+  command: Exclude<WorkPanelCommand, { type: "setDialogPresentation" | "adoptLocalDocumentWorkspace" | "adoptDraftWorkspace" }>,
 ): WorkPanelCommandResult {
   const ownerChatId = cleanIdentity(command.ownerChatId);
   if (!ownerChatId) return fail(state, "invalid_request", "trusted owner chat is required");
   if (ownerChatId.startsWith("file-draft:") && (!isLocalDocumentDraftOwnerKey(ownerChatId) ||
       !["openItem", "activateItem", "closeItem", "closeOtherItems", "showWorkspace", "hideWorkspace", "closeWorkspace"].includes(command.type) ||
-      (command.type === "openItem" && (command.descriptor.kind !== "native" || command.descriptor.surfaceKey !== "local-document")))) {
-    return fail(state, "capability_denied", "local draft workspaces only preview files");
+      (command.type === "openItem" && !isDraftWorkPanelDescriptor(command.descriptor)))) {
+    return fail(state, "capability_denied", "draft workspaces require Chat-independent previews");
   }
   const index = state.workspaces.findIndex((workspace) => workspace.ownerChatId === ownerChatId);
   const current = index >= 0 ? state.workspaces[index] : null;
@@ -893,7 +919,8 @@ function reduceWorkPanelCommandCore(
       const descriptorChatId = cleanIdentity(
         (trustedDescriptor.context as { chatId?: unknown })?.chatId,
       );
-      if (descriptorChatId && descriptorChatId !== ownerChatId) {
+      if (descriptorChatId && descriptorChatId !== ownerChatId &&
+        !(isLocalDocumentDraftOwnerKey(ownerChatId) && trustedDescriptor.module === "reference" && isDraftWorkPanelDescriptor(trustedDescriptor))) {
         return fail(state, "capability_denied", "WorkPanel item chat does not match its trusted workspace");
       }
       if ((trustedDescriptor.module === "overview" || trustedDescriptor.module === "debug") && !descriptorChatId) {
@@ -1278,7 +1305,9 @@ function reduceWorkPanelCommandCore(
 // Presentation is host-only runtime state; the public workspace/item projection
 // and its stable Chat identity do not change when a page moves to a dialog.
 export function reduceWorkPanelCommand(state: WorkPanelState, command: WorkPanelCommand): WorkPanelCommandResult {
-  if (command.type === "adoptLocalDocumentWorkspace") return adoptLocalDocumentWorkspace(state, command);
+  if (command.type === "adoptLocalDocumentWorkspace" || command.type === "adoptDraftWorkspace") {
+    return adoptLocalDocumentWorkspace(state, command);
+  }
   if (command.type === "setDialogPresentation") {
     const workspace = state.workspaces.find((entry) => entry.ownerChatId === command.ownerChatId);
     const item = workspace?.items.find((entry) => entry.itemId === command.itemId);

@@ -14,6 +14,9 @@ import {
   type WorkPanelDocumentOpenOptionsResult,
   type WorkPanelDocumentOpenCopyResult,
 } from "../../../../shared/contracts";
+import { readAgentWebclientNewChatSource } from "../../../../shared/canonical-chat-sync";
+import { localDocumentOwnerKey } from "../../../../shared/local-document";
+import { isDraftWorkPanelDescriptor, isLocalDocumentDraftOwnerKey } from "../../../../shared/work-panel";
 import { normalizeWorkPanelDocumentSource, sameWorkPanelDocumentSource } from "../../../../shared/work-panel-document-source";
 import { reportDeprecatedCompatibilityUse } from "../../../support/logging/deprecated-compatibility";
 import type { FramePortOptions } from "../ipc.shared";
@@ -52,8 +55,17 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
     if ("ok" in context)
       return context;
     const ownerChatId = context.target.ownerChatId?.trim() || "";
-    if (!ownerChatId)
-      return failure("target_unavailable", "trusted WorkPanel owner chat is unavailable");
+    const draftSource = !ownerChatId && context.kind === "agent-chat" && context.target.surfaceRole === "main-chat" && context.target.active
+      ? readAgentWebclientNewChatSource(context.target.pageRouteIdentity || "") : null;
+    const guestDraft = readAgentWebclientNewChatSource(context.target.currentUrl);
+    const draftDocumentSurface = !ownerChatId && context.kind === "agent-management" &&
+      context.target.surfaceLevel === "child" && ["file", "reference"].includes(context.target.surfaceRole) &&
+      isLocalDocumentDraftOwnerKey(context.target.draftOwnerKey || "");
+    const draftOwnerKey = draftSource && guestDraft && draftSource.agentKey === guestDraft.agentKey && draftSource.newChat === guestDraft.newChat
+      ? localDocumentOwnerKey({ ownerChatId: "", ...draftSource })
+      : draftDocumentSurface ? context.target.draftOwnerKey! : "";
+    if (!ownerChatId && !isLocalDocumentDraftOwnerKey(draftOwnerKey))
+      return failure("target_unavailable", "trusted WorkPanel owner is unavailable");
     const record = isPlainBridgeRecord(call) ? call : {};
     const method = typeof record.method === "string" ? record.method : "";
     if (context.kind === "agent-selection-explain") {
@@ -170,6 +182,20 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
     if (inputVersion === 4 || inputVersion === 5) {
       reportDeprecatedCompatibilityUse(inputVersion === 4 ? "agent-webclient.bridge-v4" : "agent-webclient.bridge-v5", { version: inputVersion, method });
     }
+    if (!ownerChatId && method === "openDocument") {
+      const source = normalizeWorkPanelDocumentSource((input as WorkPanelOpenDocumentInput).source);
+      return source?.kind === "workspace-file" || (source?.kind === "reference" && source.agentKey === draftSource?.agentKey)
+        ? failure("unsupported_native_type", "Draft documents use the WebClient viewer")
+        : failure("capability_denied", "Native document resources require a canonical Chat");
+    }
+    if (!ownerChatId && method === "openResource")
+      return failure("capability_denied", "Native document resources require a canonical Chat");
+    if (!ownerChatId && method === "openItem") {
+      const descriptor = (input as WorkPanelOpenItemInput).descriptor;
+      if (!isDraftWorkPanelDescriptor(descriptor) ||
+        (descriptor.kind === "webclient" && descriptor.module === "reference" && descriptor.context.agentKey !== draftSource?.agentKey))
+        return failure("capability_denied", "Draft WorkPanel item does not match its trusted scope");
+    }
     if (method === "openResource") {
       const resourceInput = input as WorkPanelOpenResourceInput;
       const allowedKeys = new Set([
@@ -270,6 +296,7 @@ export function createWorkpanelInvoke(deps: WorkpanelInvokePort) {
     return deps.options.dispatchWorkPanel({
       action: method as "openItem" | "activateItem" | "closeItem",
       ownerChatId,
+      ...(draftOwnerKey ? { draftOwnerKey } : {}),
       args,
     });
   }

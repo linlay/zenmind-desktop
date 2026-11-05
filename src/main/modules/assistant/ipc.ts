@@ -61,6 +61,7 @@ export interface AssistantIpcHandlerOptions {
   desktopActionOptions: any;
   app: any;
   mainWindow: any;
+  getMainWindow: () => any;
   shell: any;
   showFileDialog: ((opts: any, owner?: any) => Promise<any>) | null;
   callAgentPlatform: ((app: any, path: string, options?: any) => Promise<any>) | null;
@@ -449,6 +450,17 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       };
     }
   }
+
+  ipcMain.handle("assistant.readSkillIcon", async (event: any, id: unknown) => {
+    const currentWindow = options.getMainWindow();
+    if (!currentWindow?.webContents || event.sender !== currentWindow.webContents || event.senderFrame !== currentWindow.webContents.mainFrame) {
+      throw new Error("Skill icons require the main window frame");
+    }
+    if (typeof id !== "string" || !id.trim() || id.length > 256) {
+      throw new Error("Invalid skill id");
+    }
+    return assistantBridge.readSkillIcon(id.trim());
+  });
 
   ipcMain.handle("assistant.listAgents", async () => {
     try {

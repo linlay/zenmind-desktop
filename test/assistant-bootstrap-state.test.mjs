@@ -56,7 +56,7 @@ function createTestApp(homePath) {
   };
 }
 
-function registerFirstInstallNavigationHandler(navigation) {
+function registerFirstInstallNavigationHandler(navigation, overrides = {}, channel = "assistant.consumeFirstInstallBootstrapNavigation") {
   const handlers = new Map();
   registerAssistantIpcHandlers({
     handle(channel, handler) {
@@ -88,9 +88,31 @@ function registerFirstInstallNavigationHandler(navigation) {
     captureAssistantScreenshot: null,
     consumeFirstInstallBootstrapNavigation: () => navigation.consume(),
     platform: "darwin",
+    ...overrides,
   });
-  return handlers.get("assistant.consumeFirstInstallBootstrapNavigation");
+  return handlers.get(channel);
 }
+
+test("skill icon IPC resolves the current main window and rejects other frames", async () => {
+  let currentWindow = null;
+  const calls = [];
+  const handler = registerFirstInstallNavigationHandler({ consume() {} }, {
+    getMainWindow: () => currentWindow,
+    assistantBridge: { readSkillIcon: async id => { calls.push(id); return null; } },
+  }, "assistant.readSkillIcon");
+  const contents = { mainFrame: {} };
+  currentWindow = { webContents: contents };
+  const event = { sender: contents, senderFrame: contents.mainFrame };
+  assert.equal(await handler(event, "online-xlsx"), null);
+  await assert.rejects(handler({ ...event, senderFrame: {} }, "online-xlsx"), /main window frame/);
+  await assert.rejects(handler({ ...event, sender: {} }, "online-xlsx"), /main window frame/);
+  const replacement = { mainFrame: {} };
+  currentWindow = { webContents: replacement };
+  await assert.rejects(handler(event, "online-xlsx"), /main window frame/);
+  assert.equal(await handler({ sender: replacement, senderFrame: replacement.mainFrame }, "online-xlsx"), null);
+  await assert.rejects(handler({ sender: replacement, senderFrame: replacement.mainFrame }, ""), /Invalid skill id/);
+  assert.deepEqual(calls, ["online-xlsx", "online-xlsx"]);
+});
 
 test("first Desktop install bootstrap navigation is consumed exactly once", () => {
   const navigation = createFirstInstallBootstrapNavigation(true);
