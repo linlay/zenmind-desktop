@@ -45,3 +45,13 @@ test("selection explanation surface uses an isolated BTW root role", () => {
   assert.match(broker, /auxiliaryRootObservers/u);
   assert.match(broker, /input\.kind === "selection_explain"/u);
 });
+
+test("selection explanation chrome follows the auxiliary window startup theme", () => {
+  const styles = read("src", "renderer", "pages", "SelectionExplainWindowPage.css");
+  // The window boots its own light/dark attribute, so its chrome must read the
+  // shared theme tokens; ad-hoc variables would keep the header white in dark mode.
+  assert.doesNotMatch(styles, /var\(--(?:app-bg|border-color|text-primary|text-secondary)\b/u);
+  assert.match(styles, /\.selection-explain-window \{[^}]*background: var\(--embedded-surface-frame-bg/u);
+  assert.match(styles, /\.selection-explain-window \{[^}]*color: var\(--ink\b/u);
+  assert.match(styles, /\.selection-explain-window-header \{[^}]*background: var\(--embedded-surface-shell-bg/u);
+});

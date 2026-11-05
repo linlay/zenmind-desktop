@@ -4,8 +4,8 @@
   height: 100vh;
   overflow: hidden;
   grid-template-rows: 46px minmax(0, 1fr);
-  background: var(--app-bg, #fff);
-  color: var(--text-primary, #1f2329);
+  background: var(--embedded-surface-frame-bg, #fff);
+  color: var(--ink, #1f2329);
 }
 
 .selection-explain-window-header {
@@ -13,9 +13,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border-color, rgba(31, 35, 41, 0.12));
+  border-bottom: 1px solid var(--line-strong, rgba(31, 35, 41, 0.12));
   padding-left: 16px;
-  background: var(--app-bg, #fff);
+  background: var(--embedded-surface-shell-bg, #fff);
   user-select: none;
 }
 
@@ -72,7 +72,7 @@
   place-content: center;
   justify-items: center;
   gap: 12px;
-  color: var(--text-secondary, #646a73);
+  color: var(--ink-soft, #646a73);
   text-align: center;
 }
 
@@ -88,8 +88,8 @@
 .selection-explain-window-spinner {
   width: 24px;
   height: 24px;
-  border: 2px solid rgba(47, 84, 235, 0.18);
-  border-top-color: #2f54eb;
+  border: 2px solid var(--accent-soft, rgba(47, 84, 235, 0.18));
+  border-top-color: var(--accent, #2f54eb);
   border-radius: 50%;
   animation: selection-explain-spin 0.8s linear infinite;
 }
