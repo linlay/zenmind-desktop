@@ -122,14 +122,35 @@ for (const platform of ["darwin", "win32"]) {
     t.after(() => Object.defineProperty(process, "platform", originalPlatform));
     const h = createHarness(t);
     const types = ["mail.updated", "chat.renamed", "automation.execution.created",
-      "automation.execution.updated", "automation.execution.completed"];
+      "automation.execution.updated", "automation.execution.completed", "archive.restored"];
+    // agent-platform broadcasts the restored Chat as an active Chat summary:
+    // createdAt/updatedAt only, no archived-record instants. The broker validates
+    // this payload before delivery, so a stricter contract silently dropped the
+    // Push and left every consumer stale.
+    const archiveRestoredPayload = {
+      chatId: "chat-1",
+      agentKey: "agent-1",
+      summary: {
+        chatId: "chat-1",
+        chatName: "Restored",
+        agentKey: "agent-1",
+        mode: "GENERAL",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS,
+        lastRunId: "run-1",
+        lastRunContent: "restored response",
+        read: { isRead: false },
+      },
+    };
     const received = [];
     await h.broker.ensureConnected("http://127.0.0.1:8080", h.token, "primary");
     h.broker.subscribePush({ types, kind: "surface", consumerId: "notification-regression",
       onPush: (frame) => received.push(frame) });
     for (const type of types) {
-      h.socket("primary").emit({ frame: "push", type, data: { chatId: "chat-1", runId: "run-1",
-        startedAt: EPOCH_MS, completedAt: type.endsWith("completed") ? EPOCH_MS + 1 : null } });
+      h.socket("primary").emit({ frame: "push", type, data: type === "archive.restored"
+        ? archiveRestoredPayload
+        : { chatId: "chat-1", runId: "run-1",
+          startedAt: EPOCH_MS, completedAt: type.endsWith("completed") ? EPOCH_MS + 1 : null } });
     }
     await waitUntil(() => received.length === types.length);
     assert.deepEqual(received.map((frame) => frame.type), types);
