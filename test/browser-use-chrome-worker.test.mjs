@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { fork, spawn } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
-import { patchBrowserUseUpstream, stageBrowserUseRuntime, browserUseUpstream } from "../scripts/browser-use-patch.mjs";
+import { patchBrowserUseUpstream, stageBrowserUseRuntime, browserUseUpstream } from "../scripts/playwright/browser-use-patch.mjs";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, "..");

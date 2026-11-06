@@ -5,12 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
-import { patchBrowserUseUpstream, supportedPlaywrightCore, browserUseUpstream } from '../scripts/browser-use-patch.mjs';
+import { patchBrowserUseUpstream, supportedPlaywrightCore, browserUseUpstream } from '../scripts/playwright/browser-use-patch.mjs';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, '..');
 patchBrowserUseUpstream(root);
-const adapterSource = fs.readFileSync(path.join(root, 'scripts/browser-use-upstream-adapter.cjs'), 'utf8');
+const adapterSource = fs.readFileSync(path.join(root, 'scripts/playwright/browser-use-upstream-adapter.cjs'), 'utf8');
 const coreDir = path.dirname(require.resolve('playwright-core/package.json'));
 const originalCore = fs.readFileSync(path.join(coreDir, 'lib/coreBundle.js.desktop-original'), 'utf8');
 

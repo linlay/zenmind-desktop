@@ -6,7 +6,7 @@ import JSZip from "jszip";
 
 /** Test-only download. It never installs an extension or writes a user's Chrome profile. */
 export async function preparePlaywrightExtension(rootDir) {
-  const lock = JSON.parse(await fs.readFile(path.join(rootDir, "patches/playwright-browser-use/upstream-lock.json"), "utf8"));
+  const lock = JSON.parse(await fs.readFile(path.join(rootDir, "scripts/playwright/upstream-lock.json"), "utf8"));
   const destination = path.join(rootDir, "build/browser-use-fixture");
   const archive = path.join(destination, "playwright-extension-0.4.0.crx");
   await fs.mkdir(destination, { recursive: true });
@@ -45,5 +45,5 @@ export async function preparePlaywrightExtension(rootDir) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  console.log(JSON.stringify(await preparePlaywrightExtension(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."))));
+  console.log(JSON.stringify(await preparePlaywrightExtension(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".."))));
 }
