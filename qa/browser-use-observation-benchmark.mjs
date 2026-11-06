@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { once } from "node:events";
 import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
-import { patchBrowserUseUpstream, browserUseUpstream } from "../scripts/browser-use-patch.mjs";
+import { patchBrowserUseUpstream, browserUseUpstream } from "../scripts/playwright/browser-use-patch.mjs";
 
 // Uses an explicit Chrome-for-Testing binary and a new profile. Never attaches to the user's Chrome.
 // Example: BROWSER_USE_TEST_CHROME_FOR_TESTING='/path/to/CfT' node qa/browser-use-observation-benchmark.mjs
@@ -114,7 +114,7 @@ try {
   const sourceDigests = Object.fromEntries([
     ["engine", engineSource],
     ["projection", path.join(root, "src/main/modules/browser-use/chrome-observation.ts")],
-    ["adapter", path.join(root, "scripts/browser-use-upstream-adapter.cjs")],
+    ["adapter", path.join(root, "scripts/playwright/browser-use-upstream-adapter.cjs")],
   ].map(([name, file]) => [name, crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
   require("esbuild").buildSync({
     stdin: { contents: `export { ChromeWorkerEngine } from ${JSON.stringify(engineSource)};`, resolveDir: root },

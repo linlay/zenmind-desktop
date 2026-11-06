@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const pinned = JSON.parse(fs.readFileSync(new URL("../patches/playwright-browser-use/upstream-lock.json", import.meta.url), "utf8"));
+const pinned = JSON.parse(fs.readFileSync(new URL("./upstream-lock.json", import.meta.url), "utf8"));
 const PATCH = "DESKTOP_BROWSER_USE_PATCH_V2";
 const reviewedCore = pinned.packages["playwright-core"];
 export const browserUseUpstream = Object.freeze({

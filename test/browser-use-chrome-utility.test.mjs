@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { stageBrowserUseRuntime } from "../scripts/browser-use-patch.mjs";
+import { stageBrowserUseRuntime } from "../scripts/playwright/browser-use-patch.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 function electronExecutable() {

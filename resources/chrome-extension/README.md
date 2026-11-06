@@ -3,7 +3,7 @@
 Official Chrome Web Store CRX, version 0.5.0, extension ID
 `mmlmfjhmonkocbjadbfplnigmagldckm`. The original CRX is unchanged.
 Source: https://github.com/microsoft/playwright/tree/main/packages/extension
-Download URL and SHA-256: `patches/playwright-browser-use/upstream-lock.json`.
+Download URL and SHA-256: `scripts/playwright/upstream-lock.json`.
 License: Apache-2.0; see LICENSE and NOTICE.
 
 Both macOS and Windows packages include this directory as extra resources.

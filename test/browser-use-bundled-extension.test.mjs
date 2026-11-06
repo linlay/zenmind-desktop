@@ -15,7 +15,7 @@ const archive = path.join(root, "resources/chrome-extension/playwright.crx");
 test("offline extension preserves official identity and a stable directory; corrupt archives never extract", async t => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "bundled-extension-"));
   t.after(() => fs.rm(temporary, { recursive: true, force: true }));
-  const lock = JSON.parse(await fs.readFile(path.join(root, "patches/playwright-browser-use/upstream-lock.json"), "utf8"));
+  const lock = JSON.parse(await fs.readFile(path.join(root, "scripts/playwright/upstream-lock.json"), "utf8"));
   const data = await fs.readFile(archive);
   assert.equal(crypto.createHash("sha256").update(data).digest("hex"), lock.extension.storeCrxSha256);
   const folder = await prepareBundledBrowserExtension(archive, temporary);
