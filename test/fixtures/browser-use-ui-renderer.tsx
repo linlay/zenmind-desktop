@@ -35,10 +35,11 @@ function Fixture() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<'light' | 'dark'>('light');
   const [locale, setLocale] = useState<SupportedLocale>('zh-CN');
+  const [platform, setPlatform] = useState<'darwin' | 'win32'>('darwin');
   const [chatId, setChatId] = useState<string | null>('chat-a');
   (window as any).browserUseUiFixture = {
     setTheme(next: 'light' | 'dark') { document.documentElement.dataset.theme = next; setMode(next); },
-    setLocale, setChatId, navigate,
+    setLocale, setChatId, navigate, setPlatform,
     settingsListenerCount: () => ipcRenderer.listenerCount('fixture.browserSettingsChanged'),
   };
   return <RendererI18nContext.Provider value={{ locale, source: 'stored', t: createTranslator(locale), setLocale: async next => setLocale(next) }}>
@@ -48,7 +49,7 @@ function Fixture() {
           <strong>小君</strong><span style={{ marginLeft: 16, color: 'var(--ink-muted)' }}>浏览器控制 · 隔离界面验收</span>
         </div>
         <Routes>
-          <Route path="/settings/browser" element={<section className="settings-page" style={{ padding: 28 }}><div style={{ maxWidth: 800 }}><h1>{createTranslator(locale)('settings.browser.label')}</h1><BrowserControlSettings /></div></section>} />
+          <Route path="/settings/browser" element={<section className="settings-page" style={{ padding: 28 }}><div style={{ maxWidth: 800 }}><h1>{createTranslator(locale)('settings.browser.label')}</h1><BrowserControlSettings isMac={platform === "darwin"} isWindows={platform === "win32"} /></div></section>} />
           <Route path="*" element={<><div className="main-chat-header-actions"><BrowserUseControl chatId={chatId} /></div>
             <div style={{ padding: 32, color: 'var(--ink-soft)' }}>使用真实组件、主题与受控 IPC；浏览器连接使用测试替身。</div></>} />
         </Routes>

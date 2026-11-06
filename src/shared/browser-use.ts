@@ -96,6 +96,7 @@ export type BrowserUsePreferences = {
   defaultBackend: BrowserUseBackend;
   rememberChromeConnection: boolean;
   hasSavedAuthorization: boolean;
+  /** Last crypto attempt only; false can mean untested. Settings must not probe or gate input on this cache. */
   secureStorageAvailable: boolean;
 };
 export type BrowserUseSettingsState = BrowserUsePreferences & { connectedChats: number; activeRuns: number };
@@ -112,9 +113,6 @@ export const BROWSER_USE_CHANNEL = "browserUse.control";
 export const BROWSER_USE_CHANGED = "browserUse.changed";
 export const BROWSER_USE_SETTINGS_CHANNEL = "browserUse.settings";
 export const BROWSER_USE_SETTINGS_CHANGED = "browserUse.settingsChanged";
-export const CHROME_BROWSER_EXTENSION_URL =
-  "https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm";
-
 export type BrowserUseControlRequest =
   | { action: "state" | "disconnect" | "takeover"; chatId: string }
   | { action: "connect"; chatId: string; interactive?: boolean }

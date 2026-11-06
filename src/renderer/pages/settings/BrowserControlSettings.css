@@ -7,3 +7,12 @@
 .browser-use-settings-error { color: var(--color-error, #c83c3c); }
 .browser-use-settings-notice { color: var(--ink-soft); }
 .browser-use-settings-loading { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 12px; }
+
+.browser-use-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
+.browser-guide-step { margin-top: 24px; color: var(--ink); line-height: 1.8; max-height: 55vh; overflow-y: auto; }
+.browser-guide-step ol { margin: 0; padding-left: 24px; }
+.browser-guide-step li + li { margin-top: 16px; }
+.browser-guide-step li > button { display: block; margin-top: 8px; }
+.browser-guide-address, .browser-guide-example { margin-top: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; font-size: 12px; }
+.browser-guide-hint { color: var(--ink-soft); font-size: 12px; margin: 20px 0 0; }
+.browser-connection-guide .ant-modal-content { background: var(--bg-base); }

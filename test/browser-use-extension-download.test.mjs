@@ -204,7 +204,7 @@ test("official extension copies explicit downloads and preserves ordinary browse
       [...deliberateClicks.values()].reduce((sum, count) => sum + count, 0));
     await store.shutdown(); await controller.disconnect(); controller = undefined;
     assert.equal(browserProcess.exitCode, null, "releasing automation preserves the isolated browser until fixture cleanup");
-    t.diagnostic(`Official Extension 0.4.0 relay: ${[...deliberateClicks.values()].reduce((sum, count) => sum + count, 0)} original downloads, 12 acknowledged copies, no replay, no interceptor on ordinary observations or after Run release.`);
+    t.diagnostic(`Official Extension 0.5.0 relay: ${[...deliberateClicks.values()].reduce((sum, count) => sum + count, 0)} original downloads, 12 acknowledged copies, no replay, no interceptor on ordinary observations or after Run release.`);
   } finally {
     childProcess.spawn = originalSpawn;
     await store?.shutdown(); await controller?.disconnect().catch(() => {}); await owner?.close().catch(() => {});

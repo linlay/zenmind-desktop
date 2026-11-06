@@ -56,7 +56,7 @@ test("official saved authorization connects independent Chat groups without Allo
     ].map(([name, file]) => `export {${name}} from ${JSON.stringify(path.join(root, "src/main/modules/browser-use", `${file}.ts`))};`).join("\n"), resolveDir: root },
       bundle: true, platform: "node", format: "cjs", packages: "external", outfile: path.join(modules, "host.cjs"), logLevel: "silent" });
     const { ChromeWorkerEngine, chromeWorkerResponseError, BrowserUseRuntime } = require(path.join(modules, "host.cjs"));
-    const manifest = JSON.parse(fs.readFileSync(path.join(extension, "manifest.json"), "utf8")); assert.equal(manifest.version, "0.4.0");
+    const manifest = JSON.parse(fs.readFileSync(path.join(extension, "manifest.json"), "utf8")); assert.equal(manifest.version, "0.5.0");
     server = http.createServer((request, response) => {
       response.setHeader("Content-Type", "text/html; charset=utf-8");
       response.end(`<!doctype html><title>${request.url === "/a" ? "Owned Chat A" : "Owned Chat B"}</title><h1>Owned saved-authorization fixture</h1><button onclick="this.textContent='Clicked exactly once';document.title='Clicked fixture'">Increment counter</button>`);
@@ -227,7 +227,7 @@ test("official saved authorization connects independent Chat groups without Allo
     assert.equal(JSON.stringify(publicResults).includes(authorization), false); assert.equal(JSON.stringify(publicResults).includes(invalid), false);
     for (const item of [a, b]) await item.disconnect();
     assert.equal(browserProcess.exitCode, null, "releasing both Chat connections preserves Chrome until fixture cleanup");
-    t.diagnostic("Official Extension 0.4.0: two fresh token-authorized groups, zero chooser clicks, filtered helper pages, isolated open/observe/click, closed-local-service failure classification without replay/close, invalid-token rejection, bounded cancellation, and no credential output passed.");
+    t.diagnostic("Official Extension 0.5.0: two fresh token-authorized groups, zero chooser clicks, filtered helper pages, isolated open/observe/click, closed-local-service failure classification without replay/close, invalid-token rejection, bounded cancellation, and no credential output passed.");
   } finally {
     childProcess.spawn = originalSpawn;
     runtime?.dispose();

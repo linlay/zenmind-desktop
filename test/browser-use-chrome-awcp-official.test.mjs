@@ -142,7 +142,7 @@ test("official Chrome Worker supports mixed typed and AWCP tools with the unchan
     await engine.disconnect(); assert.equal(browserProcess.exitCode, null); checks.chromePreservedUntilFixtureCleanup = true;
     fs.mkdirSync(path.join(root, "build/qa/browser-use"), { recursive: true });
     fs.writeFileSync(path.join(root, "build/qa/browser-use/chrome-awcp-official-evidence.json"), JSON.stringify({ status: "PASS", checkedAt: new Date().toISOString(), archiveSha256: archiveSha,
-      transport: "Production ChromeWorkerEngine AWCP methods and official Extension 0.4.0; owned CfT profile; offline route owns Fetch so fixture download hook is disabled", checks, requests: network }, null, 2) + "\n");
+      transport: "Production ChromeWorkerEngine AWCP methods and official Extension 0.5.0; owned CfT profile; offline route owns Fetch so fixture download hook is disabled", checks, requests: network }, null, 2) + "\n");
     t.diagnostic(`Production AWCP Worker with official extension: ${Object.keys(checks).length} checks passed; forum requests were offline GET mocks only.`);
   } finally {
     childProcess.spawn = originalSpawn; resumeSlow?.(); await engine?.disconnect().catch(() => {});

@@ -5,7 +5,7 @@ const path = require("node:path");
 
 const output = process.env.BROWSER_SETTINGS_UI_ROOT;
 if (!output) throw new Error("The settings fixture requires its own output directory");
-const { BROWSER_USE_CHANNEL } = require(path.join(output, "channels.cjs"));
+const { BROWSER_USE_CHANNEL, BROWSER_USE_CHANGED } = require(path.join(output, "channels.cjs"));
 app.setPath("userData", path.join(output, "profile"));
 app.setPath("sessionData", path.join(output, "session"));
 app.disableHardwareAcceleration();
@@ -18,7 +18,7 @@ if (process.platform === "darwin") {
 
 const state = {
   defaultBackend: "chrome", rememberChromeConnection: false, hasSavedAuthorization: false,
-  secureStorageAvailable: true, connectedChats: 0, activeRuns: 0,
+  secureStorageAvailable: false, connectedChats: 0, activeRuns: 0,
 };
 const calls = [], cases = [], errors = [], listenerCounts = [];
 const TOKEN = "SYNTHETIC_SETTINGS_UI_AUTHORIZATION";
@@ -92,6 +92,14 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(path.join(output, "fixture.html"));
     await wait("Boolean(window.browserUseUiFixture)");
+    assert.equal(await js('document.querySelector(".browser-use-trigger") === null'), true);
+    assert.equal(await js('document.querySelector(".ant-modal") === null'), true);
+    win.webContents.send(BROWSER_USE_CHANGED, { chatId: "chat-a", backend: "chrome", connection: "disconnected", pages: [], activeRunIds: [],
+      connectionRequest: { id: "setup-request", runId: "run-a", reason: "connect" }, awaitingConnection: true });
+    await wait('Boolean(document.querySelector(".ant-modal .browser-use-controls"))');
+    await js('document.querySelector(".ant-modal-close").click()');
+    await wait('document.querySelector(".ant-modal") === null');
+    cases.push("no-toolbar-button-and-request-opens-dialog");
     // Track actual IPC reply delivery, so stale-response checks do not rely on
     // assuming that a fixed delay was long enough for the reply to arrive.
     await js(`(() => { const settings = window.electronAPI.browserUse.settings;
@@ -102,6 +110,40 @@ app.whenReady().then(async () => {
       await navigate("/settings/browser");
       await count(1);
       await wait("document.querySelector('.browser-control-settings [role=switch]')?.disabled === false");
+      if (iteration === 0) {
+        const before = calls.length;
+        const screenshot = async name => {
+          if (!process.env.BROWSER_SETTINGS_UI_SHOTS) return;
+          await js("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+          await new Promise(resolve => setTimeout(resolve, 400));
+          fs.mkdirSync(process.env.BROWSER_SETTINGS_UI_SHOTS, { recursive: true });
+          fs.writeFileSync(path.join(process.env.BROWSER_SETTINGS_UI_SHOTS, name + ".png"), (await win.webContents.capturePage()).toPNG());
+        };
+        await screenshot("settings");
+        await click("如何连接Chrome");
+        await wait('document.querySelector(".browser-connection-guide .ant-modal-body")?.textContent.includes("开发者模式")');
+        await screenshot("guide-install");
+        assert.equal(await js('document.querySelectorAll(".browser-connection-guide .ant-typography-copy").length'), 1);
+        await js('Array.from(document.querySelectorAll(".browser-connection-guide button")).find(b => b.textContent.includes("已安装")).click()');
+        await wait('document.querySelector(".browser-connection-guide .ant-modal-body")?.textContent.includes("PLAYWRIGHT_MCP_EXTENSION_TOKEN")');
+        await screenshot("guide-code");
+        await js('Array.from(document.querySelectorAll(".browser-connection-guide button")).find(b => b.textContent.includes("已复制")).click()');
+        await wait('document.querySelector(".browser-connection-guide .ant-modal-body")?.textContent.includes("钥匙串")');
+        await screenshot("guide-save");
+        await js('Array.from(document.querySelectorAll(".browser-connection-guide button")).find(b => b.textContent.includes("去粘贴")).click()');
+        await wait('!document.querySelector(".browser-connection-guide") || getComputedStyle(document.querySelector(".browser-connection-guide")).display === "none"');
+        await wait(`${tokenInput} === document.activeElement`);
+        assert.equal(calls.length, before, "reading the guide must not invoke settings or cryptography");
+        assert.equal(await js(`${tokenInput}.disabled`), false, "unknown crypto availability must not block entering a code");
+        await js('window.browserUseUiFixture.setPlatform("win32")');
+        await click("如何连接Chrome");
+        await wait('document.querySelector(".browser-connection-guide .ant-modal-body")?.textContent.includes("选择文件夹")');
+        assert.equal(await js('document.querySelector(".browser-connection-guide .ant-modal-body").textContent.includes("⇧⌘G")'), false);
+        await js('document.querySelector(".browser-connection-guide .ant-modal-close").click()');
+        await wait('getComputedStyle(document.querySelector(".browser-connection-guide")).display === "none"');
+        await js('window.browserUseUiFixture.setPlatform("darwin")');
+        cases.push("clean-settings-and-three-step-guide-without-crypto");
+      }
       await navigate("/idle");
       await count(0);
     }
@@ -120,7 +162,7 @@ app.whenReady().then(async () => {
     await count(1);
     await wait(`${tokenInput}?.disabled === false`);
     assert.equal(await js("document.querySelectorAll('.browser-control-settings [role=combobox], .browser-control-settings .ant-select').length"), 0);
-    assert.match(await js("document.querySelector('.browser-control-settings .browser-use-help').textContent"), /默认使用右侧工作面板/u);
+    assert.match(await js("document.querySelector('.browser-control-settings').textContent"), /本机加密/u);
     cases.push("workpanel-default-without-selector");
 
     await fillToken();
@@ -160,9 +202,12 @@ app.whenReady().then(async () => {
     await js("new Promise(resolve => requestAnimationFrame(resolve))");
     assert.equal(await js("document.querySelector('.browser-control-settings [role=switch]').getAttribute('aria-checked')"), "false");
     assert.equal(await js(`${tokenInput}.value`), "");
-    assert.equal(await js(`${tokenInput}.disabled`), true);
+    assert.equal(await js(`${tokenInput}.disabled`), false);
     assert.match(await js("document.querySelector('.browser-use-settings-notice').textContent"), /清除|忘记/u);
     cases.push("late-save-does-not-replace-forget");
+    await fillToken();
+    assert.equal(await js("document.querySelector('.browser-control-settings [role=switch]').getAttribute('aria-checked')"), "true");
+    cases.push("pasting-authorization-enables-remember");
 
     await navigate("/idle");
     await count(0);

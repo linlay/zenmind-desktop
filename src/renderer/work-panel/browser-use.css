@@ -1,5 +1,5 @@
 .browser-use-controls {
-  width: 280px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -30,7 +30,3 @@
 .browser-use-request-help { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--control-hover-bg); font-size: 12px; line-height: 1.6; }
 .browser-use-settings-link { align-self: flex-start; padding-inline: 0; }
 .browser-use-page-button:disabled { cursor: default; opacity: 0.55; }
-.browser-use-trigger { position: relative; }
-.browser-use-dot { position: absolute; width: 5px; height: 5px; border-radius: 50%; right: 4px; bottom: 4px; background: #8b8b8b; }
-.browser-use-dot.is-connected { background: #389e0d; }
-.browser-use-dot.is-connecting { background: #d48806; }

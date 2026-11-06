@@ -4,25 +4,13 @@ import crypto from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import JSZip from "jszip";
 
-/** Test-only download. It never installs an extension or writes a user's Chrome profile. */
+/** Verify and unpack the bundled official artifact for isolated tests. */
 export async function preparePlaywrightExtension(rootDir) {
   const lock = JSON.parse(await fs.readFile(path.join(rootDir, "patches/playwright-browser-use/upstream-lock.json"), "utf8"));
   const destination = path.join(rootDir, "build/browser-use-fixture");
-  const archive = path.join(destination, "playwright-extension-0.4.0.crx");
+  const archive = path.join(rootDir, "resources/chrome-extension/playwright.crx");
   await fs.mkdir(destination, { recursive: true });
-  let data;
-  try { data = await fs.readFile(archive); } catch {
-    let lastError;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const response = await fetch(lock.extension.storeDownloadUrl, { signal: AbortSignal.timeout(30000) });
-        if (!response.ok) throw new Error(`Official extension download failed (${response.status})`);
-        data = Buffer.from(await response.arrayBuffer());
-        break;
-      } catch (error) { lastError = error; }
-    }
-    if (!data) throw lastError;
-  }
+  const data = await fs.readFile(archive);
   if (crypto.createHash("sha256").update(data).digest("hex") !== lock.extension.storeCrxSha256) throw new Error("Official extension archive changed; review the pinned artifact before running the fixture");
   if (data.subarray(0, 4).toString() !== "Cr24" || data.readUInt32LE(4) !== 3) throw new Error("Expected an official CRX3 extension");
   const zip = await JSZip.loadAsync(data.subarray(12 + data.readUInt32LE(8)));
@@ -40,7 +28,6 @@ export async function preparePlaywrightExtension(rootDir) {
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, await entry.async("nodebuffer"));
   }
-  await fs.writeFile(archive, data);
   return { extensionDir, id, version: manifest.version };
 }
 

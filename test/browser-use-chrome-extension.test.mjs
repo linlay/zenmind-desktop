@@ -15,7 +15,7 @@ const extension = process.env.BROWSER_USE_TEST_EXTENSION ?? path.join(root, "bui
 
 for (const productionDiscovery of [false, true]) test(productionDiscovery
   ? "production default discovery false negative: official approval UI, real relay and no browser/profile override"
-  : "official Extension 0.4.0: approval UI, real relay, selected-tab isolation, operations and cancellation", { skip: !electron || !chrome || !fs.existsSync(path.join(extension, "manifest.json")), timeout: 60_000 }, async t => {
+  : "official Extension 0.5.0: approval UI, real relay, selected-tab isolation, operations and cancellation", { skip: !electron || !chrome || !fs.existsSync(path.join(extension, "manifest.json")), timeout: 60_000 }, async t => {
   const fixtureApp = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-browser-extension-app-"));
   const mainDir = path.join(fixtureApp, "dist-electron/main");
   fs.mkdirSync(mainDir, { recursive: true });

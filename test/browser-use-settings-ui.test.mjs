@@ -51,8 +51,8 @@ test("real settings component releases subscriptions, ignores late replies and s
   const result = JSON.parse(fs.readFileSync(path.join(output, "report.json"), "utf8"));
   assert.equal(result.ok, true);
   assert.deepEqual(result.cases, [
-    "repeated-mount-unmount", "workpanel-default-without-selector", "late-get-does-not-replace-new-draft",
-    "save-clears-write-only-authorization", "late-save-does-not-replace-forget", "final-unsubscribe",
+    "no-toolbar-button-and-request-opens-dialog", "clean-settings-and-three-step-guide-without-crypto", "repeated-mount-unmount", "workpanel-default-without-selector", "late-get-does-not-replace-new-draft",
+    "save-clears-write-only-authorization", "late-save-does-not-replace-forget", "pasting-authorization-enables-remember", "final-unsubscribe",
   ]);
   assert.deepEqual(result.listenerCounts, [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]);
   assert.equal(result.saveCalls, 2);

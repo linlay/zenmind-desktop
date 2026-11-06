@@ -29,7 +29,7 @@ export type BrowserUseSettingsInput = {
 export type BrowserUseSettingsStore = {
   /** Main-only metadata snapshot; never probes or initializes OS cryptography. */
   readSnapshot(): BrowserUsePreferences;
-  /** Explicit trusted settings query: refreshes actual system storage availability. */
+  /** Validate stored metadata without initializing OS cryptography. */
   read(): Promise<BrowserUsePreferences>;
   update(input: BrowserUseSettingsInput): Promise<BrowserUsePreferences>;
   forget(): Promise<BrowserUsePreferences>;
@@ -82,7 +82,7 @@ export function createBrowserUseSettingsStore(app: App, platform: NodeJS.Platfor
   const credentialRoot = path.join(secretsRoot, "browser-use");
   const settingsFile = path.join(configRoot, "browser-use.json");
   // Unknown is conservatively unavailable in background snapshots. The settings
-  // page explicitly calls read(), while encryption/decryption verifies anew.
+  // page never probes: only encryption/decryption verifies availability.
   let lastKnownSecureStorageAvailable = false;
   let authorizationRevision = 0;
   let mutationEpoch = 0;
@@ -306,11 +306,8 @@ export function createBrowserUseSettingsStore(app: App, platform: NodeJS.Platfor
     read: () => safelyAsync(async () => {
       const stored = readStored();
       if (stored.authorizationId) readEncrypted(stored.authorizationId);
-      // Native async safeStorage keeps Keychain prompts off the Main thread.
-      await secureStorageAvailable();
-      const current = readStored();
-      if (current.authorizationId) readEncrypted(current.authorizationId);
-      return publicState(current);
+      // Merely opening settings must never initialize Keychain or DPAPI.
+      return publicState(stored);
     }),
     authorization: () => safelyAsync(() => authorization()),
     update: input => safelyAsync(async () => {

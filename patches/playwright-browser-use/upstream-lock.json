@@ -11,10 +11,10 @@
     }
   },
   "extension": {
-    "sourceVersion": "0.4.0",
+    "sourceVersion": "0.5.0",
     "relayProtocol": 2,
     "id": "mmlmfjhmonkocbjadbfplnigmagldckm",
     "storeDownloadUrl": "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=155.0.0.0&acceptformat=crx3&x=id%3Dmmlmfjhmonkocbjadbfplnigmagldckm%26installsource%3Dondemand%26uc",
-    "storeCrxSha256": "e012b45f6170f627d275588ca1a37dffe5919c2635bbac512f11b74930e63835"
+    "storeCrxSha256": "598517ba87d9f2f3b3642483cb6662bc0ea061401c5d3c1eb188a19847c92b0b"
   }
 }

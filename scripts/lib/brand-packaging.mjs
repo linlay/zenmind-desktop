@@ -94,6 +94,7 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
     ],
     npmRebuild: false,
     extraResources: [
+      { from: "resources/chrome-extension", to: "resources/chrome-extension" },
       { from: desktopNodeRuntimeRelativePath(), to: "node-runtime", filter: nodeRuntimeResourceFilters(target) },
       {
         from: desktopBuiltinServicesRelativePath(),

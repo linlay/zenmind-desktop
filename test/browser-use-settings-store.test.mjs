@@ -98,7 +98,7 @@ async function rejectsSafely(operation, expected, fixture) {
 test("new settings use conservative defaults and reading creates no config or secret files", async t => {
   const f = fixture(t);
   assert.deepEqual(plain((await f.store.read())), { defaultBackend: "workpanel", rememberChromeConnection: false,
-    hasSavedAuthorization: false, secureStorageAvailable: true });
+    hasSavedAuthorization: false, secureStorageAvailable: false });
   assert.equal((await f.store.authorization()), undefined);
   assert.equal(fs.existsSync(f.configRoot), false);
   assert.equal(fs.existsSync(f.secretsRoot), false);
@@ -124,20 +124,14 @@ test("new Chat state, Run preparation and status broadcasts never initialize OS 
     assert.equal(f.state.encryptCalls, 0);
     assert.equal(f.state.decryptCalls, 0);
 
-    assert.equal((await f.store.read()).secureStorageAvailable, true, "an explicit settings query probes actual availability");
-    assert.equal(f.state.probeCalls, 1);
-    runtime.prepareRun({ chatId: "second-chat", runId: "run-2", agentKey: "cutej" });
-    assert.equal(changes.at(-1).secureStorageAvailable, true, "notifications reuse the last completed probe");
-    assert.equal(f.state.probeCalls, 1);
-
+    await f.store.read();
     f.state.available = false;
-    assert.equal(f.store.readSnapshot().secureStorageAvailable, true, "metadata reads do not secretly refresh OS state");
-    assert.equal(f.state.probeCalls, 1);
-    assert.equal((await f.store.read()).secureStorageAvailable, false);
+    await f.store.read();
+    runtime.prepareRun({ chatId: "second-chat", runId: "run-2", agentKey: "cutej" });
     runtime.releaseRun("run-2");
-    assert.equal(changes.at(-1).secureStorageAvailable, false);
-    assert.equal(f.state.probeCalls, 2);
+    assert.equal(f.state.probeCalls, 0, "opening and refreshing settings never initializes OS crypto");
     assert.equal(f.state.encryptCalls + f.state.decryptCalls, 0);
+
   }
 });
 
@@ -152,6 +146,8 @@ test("saved authorization remains encrypted and is freshly checked when actually
     assert.equal(fresh.readSnapshot().secureStorageAvailable, false, "a new store has not probed the OS yet");
     assert.equal(f.state.probeCalls, before);
     assert.equal(f.state.decryptCalls, 0);
+    assert.equal((await fresh.read()).hasSavedAuthorization, true);
+    assert.equal(f.state.probeCalls, before, "opening settings with saved authorization never probes the OS");
     assert.equal((await fresh.authorization()), TOKEN);
     assert.equal(f.state.probeCalls, before + 1);
     assert.equal(f.state.decryptCalls, 1);

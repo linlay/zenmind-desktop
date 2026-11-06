@@ -1,6 +1,6 @@
 import { app, dialog, clipboard, globalShortcut, ipcMain, protocol, shell as electronShell } from "electron";
 import { BROWSER_USE_CHANGED, BROWSER_USE_SETTINGS_CHANGED, type BrowserUseSettingsState } from "../../shared/browser-use";
-import { BrowserUseRuntime, ChromeBackend, createBrowserUseSettingsStore, registerBrowserUseIpc } from "../modules/browser-use";
+import { BrowserUseRuntime, ChromeBackend, createBrowserUseSettingsStore, registerBrowserUseIpc, prepareBundledBrowserExtension } from "../modules/browser-use";
 import path from "node:path";
 import { AGENT_WEBCLIENT_TARGET_PATH } from "../../shared/agent-webclient-routes";
 import { INSTALLER_SHUTDOWN_ARG, STORAGE_NAMESPACE, PRODUCT_NAME } from "../../shared/brand";
@@ -195,7 +195,17 @@ export function createMainProcessRuntime() {
   registerBrowserUseIpc({
     ipcMain, runtime: browserUse, getMainWindow,
     getActiveChatId: () => realtimeBroker.getMainChatRootObserver()?.contextId,
-    openExternal: url => electronShell.openExternal(url),
+    openBundledExtension: async () => {
+      const source = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), "resources/chrome-extension/playwright.crx");
+      const folder = await prepareBundledBrowserExtension(source, path.join(app.getPath("userData"), "browser-extensions"));
+      // The setup button explicitly copies the folder location for Chrome’s folder picker.
+      clipboard.writeText(folder);
+      // Electron dispatches to Finder on macOS and Explorer on Windows.
+      if (process.platform === "darwin" || process.platform === "win32") {
+        const error = await electronShell.openPath(folder);
+        if (error) throw new Error(error);
+      } else throw new Error("Chrome extension setup is supported on macOS and Windows");
+    },
     settingsStore: browserUseSettings,
     onSettingsChanged: publishBrowserSettings,
   });

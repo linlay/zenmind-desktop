@@ -22,18 +22,13 @@ const { registerBrowserUseIpc } = ipcModule.exports;
 function fixture() {
   const handlers = new Map(), calls = [], events = [];
   let preferences = { defaultBackend: "workpanel", rememberChromeConnection: false, hasSavedAuthorization: false, secureStorageAvailable: true };
-  let broken = false, probeFails = false, probeCalls = 0, lastKnownAvailability = false, probeGate, updateGate, activeChatId;
+  let broken = false, lastKnownAvailability = false, updateGate, activeChatId;
   const store = {
     readSnapshot() {
       if (broken) throw Object.assign(new Error("Browser settings could not be read or saved."), { code: "browser_settings_unavailable" });
       return { ...preferences, secureStorageAvailable: lastKnownAvailability };
     },
     async read() {
-      this.readSnapshot();
-      probeCalls++;
-      await probeGate?.promise;
-      if (probeFails) { lastKnownAvailability = false; throw new Error("System storage probe failed."); }
-      lastKnownAvailability = preferences.secureStorageAvailable;
       return this.readSnapshot();
     },
     async update(value) {
@@ -53,11 +48,9 @@ function fixture() {
   const valid = { sender: contents, senderFrame: frame };
   registerBrowserUseIpc({ ipcMain: { handle(channel, handler) { handlers.set(channel, handler); } }, runtime, settingsStore: store,
     getMainWindow: () => ({ webContents: contents, isDestroyed: () => false }), getActiveChatId: () => activeChatId,
-    openExternal: async url => calls.push({ method: "external", url }), onSettingsChanged: value => events.push(value) });
+    openBundledExtension: async () => calls.push({ method: "bundled-extension" }), onSettingsChanged: value => events.push(value) });
   return { runtime, store, calls, events, valid, contents, frame, breakStore: () => { broken = true; },
-    probes: () => probeCalls, availability: value => { preferences.secureStorageAvailable = value; },
-    failProbe: value => { probeFails = value; },
-    holdProbe: gate => { probeGate = gate; }, holdUpdate: gate => { updateGate = gate; }, activeChat: value => { activeChatId = value; },
+    holdUpdate: gate => { updateGate = gate; }, activeChat: value => { activeChatId = value; },
     settings: (request, event = valid) => handlers.get("browserUse.settings")(event, request),
     control: request => handlers.get("browserUse.control")(valid, request) };
 }
@@ -71,18 +64,11 @@ test("browser settings are available without a Chat only to the trusted Main top
   assert.equal(f.calls.length, 0);
 });
 
-test("an asynchronous storage probe keeps metadata controls responsive and returns current Run counts", async t => {
+test("opening settings reads metadata without initializing crypto or a browser", async t => {
   const f = fixture(); t.after(() => f.runtime.dispose());
-  let resolve; const gate = { promise: new Promise(yes => { resolve = yes; }) };
-  f.holdProbe(gate); f.activeChat("chat-a");
-  const pending = f.settings({ action: "get" });
-  await new Promise(done => setImmediate(done));
-  assert.equal((await f.control({ action: "state", chatId: "chat-a" })).ok, true);
-  assert.equal(f.probes(), 1);
-  f.runtime.prepareRun({ chatId: "chat-a", runId: "new-run", agentKey: "cutej" });
-  resolve();
-  assert.equal((await pending).state.activeRuns, 1);
+  for (let i = 0; i < 3; i++) assert.equal((await f.settings({ action: "get" })).ok, true);
   assert.equal(f.calls.some(call => call.method === "authorization"), false);
+  assert.equal(f.calls.length, 0);
 });
 
 test("settings save waits for native asynchronous persistence before reporting success", async t => {
@@ -98,28 +84,15 @@ test("settings save waits for native asynchronous persistence before reporting s
   assert.equal(result.state.hasSavedAuthorization, true);
 });
 
-test("trusted settings queries return freshly probed availability while Run status broadcasts remain metadata-only", async t => {
+test("settings queries return current Run counts without probing system storage", async t => {
   const f = fixture(); t.after(() => f.runtime.dispose());
-  assert.equal(f.runtime.state("chat-a").backend, "workpanel");
   f.runtime.prepareRun({ chatId: "chat-a", runId: "run-a", agentKey: "cutej" });
-  f.runtime.registerRun({ chatId: "chat-a", runId: "run-a", agentKey: "cutej" });
-  assert.equal(f.runtime.settingsState().secureStorageAvailable, false);
-  assert.equal(f.probes(), 0);
-
   const opened = await f.settings({ action: "get" });
-  assert.equal(opened.ok, true);
-  assert.equal(opened.state.secureStorageAvailable, true, "IPC must not return the unprobed runtime snapshot");
   assert.equal(opened.state.activeRuns, 1);
-  assert.equal(f.probes(), 1);
+  assert.equal(opened.state.secureStorageAvailable, false);
   f.runtime.releaseRun("run-a");
-  assert.equal(f.events.at(-1).secureStorageAvailable, true);
-  assert.equal(f.probes(), 1);
-
-  f.availability(false);
-  const refreshed = await f.settings({ action: "get" });
-  assert.equal(refreshed.state.secureStorageAvailable, false);
-  assert.equal(refreshed.state.activeRuns, 0);
-  assert.equal(f.probes(), 2);
+  assert.equal((await f.settings({ action: "get" })).state.activeRuns, 0);
+  assert.equal(f.calls.some(call => call.method === "authorization"), false);
 });
 
 test("settings write credentials once, never return them, and reject unrecognized fields", async t => {
@@ -154,21 +127,22 @@ test("forget can recover corrupt settings without decrypting them or starting a 
   assert.equal(f.calls.some(call => call.method === "authorization"), false);
 });
 
-test("forget after a corrupt initial query refreshes current-page storage status without turning a probe failure into a recovery failure", async t => {
-  for (const probeFails of [false, true]) {
-    const f = fixture(); t.after(() => f.runtime.dispose());
-    f.breakStore();
-    assert.equal((await f.settings({ action: "get" })).error.code, "browser_settings_unavailable");
-    assert.equal(f.probes(), 0, "a corrupt initial query fails before probing system storage");
-    f.failProbe(probeFails);
-    const recovered = await f.settings({ action: "forget" });
-    assert.equal(recovered.ok, true, "forget remains successful even if its follow-up status refresh fails");
-    assert.equal(recovered.state.rememberChromeConnection, false);
-    assert.equal(recovered.state.hasSavedAuthorization, false);
-    assert.equal(recovered.state.secureStorageAvailable, !probeFails, "the page can immediately save replacement authorization when storage is available");
-    assert.equal(f.events.at(-1).secureStorageAvailable, !probeFails);
-    assert.equal(f.probes(), 1);
-    assert.equal(f.calls.filter(call => call.method === "forget").length, 1);
-    assert.equal(f.calls.some(call => call.method === "authorization"), false);
-  }
+test("forget recovers corrupt settings without probing system storage", async t => {
+  const f = fixture(); t.after(() => f.runtime.dispose());
+  f.breakStore();
+  assert.equal((await f.settings({ action: "get" })).error.code, "browser_settings_unavailable");
+  const recovered = await f.settings({ action: "forget" });
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.state.rememberChromeConnection, false);
+  assert.equal(recovered.state.hasSavedAuthorization, false);
+  assert.equal(f.calls.filter(call => call.method === "forget").length, 1);
+  assert.equal(f.calls.some(call => call.method === "authorization"), false);
+});
+
+test("offline extension setup works without a Chat and rejects caller-supplied paths", async t => {
+  const f = fixture(); t.after(() => f.runtime.dispose());
+  assert.equal((await f.settings({ action: "install-extension" })).ok, true);
+  assert.deepEqual(f.calls, [{ method: "bundled-extension" }]);
+  assert.equal((await f.settings({ action: "install-extension", path: "/tmp/arbitrary" })).ok, false);
+  assert.equal(f.calls.length, 1);
 });

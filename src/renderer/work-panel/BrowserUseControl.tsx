@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Popover, Spin } from "antd";
+import { Button, Modal, Spin } from "antd";
 import { GlobalOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import type { BrowserUseControlRequest, BrowserUseState } from "../../shared/browser-use";
@@ -128,11 +128,8 @@ export function BrowserUseControl({ chatId }: { chatId: string | null }) {
       <Button size="small" type="link" className="browser-use-settings-link" onClick={() => { setOpen(false); navigate(buildSettingsSectionPath("browser")); }}>{t("browserUse.settings")}</Button>
     </div>
   );
-  return <Popover content={content} trigger="click" open={open} onOpenChange={setOpen} placement="bottomRight">
-    <button type="button" className={`main-chat-header-action browser-use-trigger${state?.backend === "chrome" ? " is-chrome" : ""}`}
-      aria-label={t("browserUse.title")} title={t("browserUse.title")} aria-expanded={open}>
-      <GlobalOutlined aria-hidden="true" />
-      {state?.backend === "chrome" && <span className={`browser-use-dot is-${connection}`} />}
-    </button>
-  </Popover>;
+  // Connection requests remain actionable without a permanent chat toolbar entry.
+  return <Modal open={open} onCancel={() => setOpen(false)} footer={null} destroyOnClose>
+    {content}
+  </Modal>;
 }

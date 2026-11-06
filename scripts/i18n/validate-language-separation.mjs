@@ -6,6 +6,8 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const dictionariesRoot = path.join(projectRoot, "src", "shared", "i18n", "dictionaries");
 
 const allowedLatinTerms = [
+  /chrome:\/\/extensions/g, // Chrome extension management address.
+  /PLAYWRIGHT_MCP_EXTENSION_TOKEN/g, // Exact field users copy from the extension.
   /ZenMind/g,
   /\bZenmi\b/g, // Product agent name.
   /\bimages\[\]/g, // image_generate result field.
@@ -52,7 +54,9 @@ const allowedLatinTerms = [
   /\b[Bb]earer\b/g,
   /Google/g,
   /Chrome/g,
+  /Playwright Extension/g, // Official extension name shown in Chrome.
   /Playwright/g,
+  /\bMac\b/g,
   /Allow & select/g, // Exact label on the official extension's approval page.
   /Kanban/g,
   /App/g,

@@ -4867,7 +4867,7 @@ export function SettingsPage({
       case "localServices":
         return <LocalServicesSettings isWindows={isWindows} />;
       case "browser":
-        return <BrowserControlSettings />;
+        return <BrowserControlSettings isMac={isMac} isWindows={isWindows} />;
       case "control":
         return (
           <div className="settings-control-center-embed">

@@ -1,5 +1,5 @@
 import type { IpcMain, BrowserWindow } from "electron";
-import { BROWSER_USE_CHANNEL, BROWSER_USE_SETTINGS_CHANNEL, CHROME_BROWSER_EXTENSION_URL,
+import { BROWSER_USE_CHANNEL, BROWSER_USE_SETTINGS_CHANNEL,
   type BrowserUseControlRequest, type BrowserUsePreferences, type BrowserUseResult,
   type BrowserUseSettingsRequest, type BrowserUseSettingsResult, type BrowserUseSettingsState } from "../../../shared/browser-use";
 import { BrowserUseRuntime, browserUseError } from "./runtime";
@@ -9,7 +9,7 @@ export function registerBrowserUseIpc(options: {
   runtime: BrowserUseRuntime;
   getMainWindow(): BrowserWindow | null;
   getActiveChatId(): string | undefined;
-  openExternal(url: string): Promise<void>;
+  openBundledExtension(): Promise<void>;
   settingsStore?: {
     read(): Promise<BrowserUsePreferences>;
     update(input: Omit<Extract<BrowserUseSettingsRequest, { action: "save" }>, "action">): Promise<BrowserUsePreferences>;
@@ -38,7 +38,7 @@ export function registerBrowserUseIpc(options: {
         case "takeover": return { ok: true, state: await options.runtime.takeover(input.chatId) };
         case "activate": return { ok: true, state: await options.runtime.activate(input.chatId, input.surfaceId) };
         case "install-extension":
-          await options.openExternal(CHROME_BROWSER_EXTENSION_URL);
+          await options.openBundledExtension();
           return { ok: true, state: options.runtime.state(input.chatId) };
         default: throw Object.assign(new Error("Unsupported browser control."), { code: "invalid_args" });
       }
@@ -68,25 +68,14 @@ export function registerBrowserUseIpc(options: {
           await options.settingsStore.forget();
           await options.runtime.disconnectIdleConnections();
           break;
-        case "install-extension": await options.openExternal(CHROME_BROWSER_EXTENSION_URL); break;
+        case "install-extension": await options.openBundledExtension(); break;
         default: throw Object.assign(new Error("The browser settings request is invalid."), { code: "invalid_browser_settings" });
       }
-      // Runtime status notifications use a metadata-only snapshot. A trusted,
-      // explicit settings query refreshes the real OS capability separately.
+      // Settings reads validate local data only; OS crypto is deferred to saving or using authorization.
       let state = options.runtime.settingsState();
       if (input.action === "get") {
         const preferences = await options.settingsStore.read();
         state = { ...options.runtime.settingsState(), ...preferences };
-      }
-      else if (input.action === "forget") {
-        // A corrupt first query may never have probed system storage. Refresh it
-        // after recovery so the current page can save a replacement immediately.
-        // An unavailable probe cannot undo authorization that was already forgotten.
-        try {
-          const preferences = await options.settingsStore.read();
-          state = { ...options.runtime.settingsState(), ...preferences };
-        }
-        catch { state = { ...state, secureStorageAvailable: false }; }
       }
       if (input.action !== "get") {
         try { options.onSettingsChanged?.(state); } catch { /* A closed UI cannot undo a saved setting. */ }

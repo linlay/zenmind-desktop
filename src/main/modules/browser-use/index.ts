@@ -3,3 +3,4 @@ export type { BrowserRunSource, BrowserWorkerClient, BrowserAwcpDispatch } from 
 export { ChromeBackend } from "./chrome-backend";
 export { registerBrowserUseIpc } from "./ipc";
 export { createBrowserUseSettingsStore } from "./settings-store";
+export { prepareBundledBrowserExtension } from "./bundled-extension";
