@@ -7,7 +7,7 @@ import http from 'node:http';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createRequire } from 'node:module';
-import { patchBrowserUseUpstream } from '../scripts/browser-use-patch.mjs';
+import { patchBrowserUseUpstream } from '../scripts/playwright/browser-use-patch.mjs';
 const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, '..');
 patchBrowserUseUpstream(root);

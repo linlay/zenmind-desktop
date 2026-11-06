@@ -7,7 +7,7 @@ import childProcess from "node:child_process";
 import { once } from "node:events";
 import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
-import { patchBrowserUseUpstream } from "../scripts/browser-use-patch.mjs";
+import { patchBrowserUseUpstream } from "../scripts/playwright/browser-use-patch.mjs";
 
 const root = path.resolve(import.meta.dirname, ".."), require = createRequire(import.meta.url);
 const chrome = process.env.BROWSER_USE_TEST_CHROME_FOR_TESTING;

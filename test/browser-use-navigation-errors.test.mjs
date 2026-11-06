@@ -99,7 +99,7 @@ async function adapterFixture({ createFailure = false, registrationFailure = fal
   const context = { tabs: () => registrationFailure ? [] : [tab], ensureBrowserContext: async () => {} };
   const sandbox = { module: { exports: {} }, process: { env: {} }, URL, init_mcp() {}, resolveConfig: async () => ({}), filteredTools: () => [],
     BrowserBackend: class { constructor() { this._context = context; } async initialize() {} async dispose() {} } };
-  vm.runInNewContext(fs.readFileSync(path.join(root, "scripts/browser-use-upstream-adapter.cjs"), "utf8"), sandbox);
+  vm.runInNewContext(fs.readFileSync(path.join(root, "scripts/playwright/browser-use-upstream-adapter.cjs"), "utf8"), sandbox);
   const controller = await sandbox.module.exports.__desktopBrowserUse.create({ outputDir: "/fixture", context: browserContext });
   return { counts, controller };
 }

@@ -1,5 +1,5 @@
 import { stageNpmRuntime } from "./stage-npm-runtime.mjs";
-import { patchBrowserUseUpstream, stageBrowserUseRuntime } from "./browser-use-patch.mjs";
+import { patchBrowserUseUpstream, stageBrowserUseRuntime } from "./playwright/browser-use-patch.mjs";
 import { buildNodeLauncher } from "./build-node-launcher.mjs";
 import fs from "node:fs";
 import path from "node:path";

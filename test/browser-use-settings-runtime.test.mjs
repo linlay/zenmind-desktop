@@ -440,7 +440,7 @@ test("Worker validates explicit Main authorization, forwards it privately and ne
 });
 
 test("adapter rejects inherited authorization and removes explicit credentials after successful and failed handshakes", async () => {
-  const adapter = fs.readFileSync(path.resolve(import.meta.dirname, "../scripts/browser-use-upstream-adapter.cjs"), "utf8");
+  const adapter = fs.readFileSync(path.resolve(import.meta.dirname, "../scripts/playwright/browser-use-upstream-adapter.cjs"), "utf8");
   for (const explicit of [undefined, token]) for (const reject of [false, true]) {
     const environment = { PLAYWRIGHT_MCP_EXTENSION_TOKEN: "INHERITED_CREDENTIAL_MUST_BE_IGNORED", PWTEST_EXTENSION_USER_DATA_DIR: "/untrusted" };
     const captured = [], context = { tabs: () => [], ensureBrowserContext: async () => {} };
