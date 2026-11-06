@@ -84,7 +84,7 @@ export class AgentPlatformAssistantBridge {
     this.directory = new AgentDirectory(this.platform, options.ports);
     this.chats = new ChatClient(this.platform);
     this.exports = new ChatExportClient(this.platform);
-    this.completion = new ImageCompletion(this.platform, (request, onRawEvent, strictAttachments, detail) => this.runs.completeText(request, onRawEvent, strictAttachments, detail));
+    this.completion = new ImageCompletion(this.platform, (request, onRawEvent, strictAttachments) => this.runs.completeText(request, onRawEvent, strictAttachments));
   }
 
   async readSkillIcon(id: string): Promise<{ contentType: string; bytes: Uint8Array } | null> {

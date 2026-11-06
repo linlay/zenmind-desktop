@@ -372,8 +372,8 @@ test("Zenmi image completion stops the run after one successful tool result and 
     assert.equal(result.message, "Zenmi 图片生成成功。");
     assert.equal(requests.filter((request) => request.target.includes("/api/interrupt")).length, 1);
     assert.equal(ws.queryRequests.length, 1);
-    // The outcome comes from image_generate's tool events, delivered only in detailed mode.
-    assert.equal(ws.queryRequests[0].frame.detail, "detailed");
+    // Platform delivers image_generate's call at every level; the query names none.
+    assert.equal(ws.queryRequests[0].frame.detail, undefined);
   } finally {
     bridge.dispose();
     globalThis.fetch = originalFetch;

@@ -1,5 +1,4 @@
 import type {
-  AgentPlatformRequestFrame,
   AssistantEvent,
   AssistantStartRunRequest,
   AssistantStartRunResult,
@@ -315,9 +314,7 @@ export class AssistantRunController {
     }
   }
 
-  /** detail is set only by a caller that reads tool events from onRawEvent;
-   * omitted follows the Agent's default detail level. */
-  async completeText(request: AssistantStartRunRequest, onRawEvent?: (event: Record<string, unknown>) => boolean | void, strictAttachments = false, detail?: AgentPlatformRequestFrame["detail"]): Promise<AssistantTextCompletionResult> {
+  async completeText(request: AssistantStartRunRequest, onRawEvent?: (event: Record<string, unknown>) => boolean | void, strictAttachments = false): Promise<AssistantTextCompletionResult> {
     const message = request.message.trim();
     const chatId = request.chatId?.trim() || createChatId();
     const runId = request.runId?.trim() || createRunId();
@@ -374,7 +371,6 @@ export class AssistantRunController {
       activeRun,
       onRawEvent,
       strictAttachments,
-      detail,
     });
   }
 
@@ -468,7 +464,6 @@ export class AssistantRunController {
     onAcceptance?: (result: AssistantStartRunResult) => void;
     onRawEvent?: (event: Record<string, unknown>) => boolean | void;
     strictAttachments?: boolean;
-    detail?: AgentPlatformRequestFrame["detail"];
   }): Promise<AssistantTextCompletionResult> {
     let acceptanceSettled = false;
     let stoppedByRawEvent = false;
@@ -499,7 +494,6 @@ export class AssistantRunController {
           }
           : {}),
         signal: run.activeRun.controller.signal,
-        ...(run.detail ? { detail: run.detail } : {}),
         payload: {
           requestId,
           runId: run.runId,

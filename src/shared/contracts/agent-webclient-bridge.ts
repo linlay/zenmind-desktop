@@ -316,9 +316,9 @@ export type AgentPlatformRequestFrame = {
   frame: "request";
   type: string;
   id: string;
-  /** Platform event detail level of /api/query, /api/attach and /api/chat.
-   * Omitted follows the Agent's default; Desktop sets it only for its own
-   * main-process Runs that read tool events (the image studio asks for detailed). */
+  /** History-read level of /api/chat; omitted reads at the Agent's default.
+   * A Run is delivered at its Agent's configured level, so Platform rejects
+   * detail on every other frame. */
   detail?: "simple" | "detailed";
   payload?: unknown;
 };

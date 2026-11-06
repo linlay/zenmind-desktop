@@ -42,5 +42,3 @@ Thumbs.db
 .codegraph/
 .doc/
 
-# Local nested workspace (not a Desktop source dependency)
-/zenmind/
