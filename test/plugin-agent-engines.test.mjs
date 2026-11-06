@@ -350,7 +350,13 @@ async function engineManagementServer(t, sync) {
     const snapshot = JSON.parse(body); state.requests.push(snapshot);
     assert.equal(request.url, '/api/desktop/agent-engines/snapshot');
     assert.ok(snapshot.revision >= state.revision);
+    if (state.rejectPlugin && snapshot.entries.some(entry => entry.pluginId === state.rejectPlugin && entry.enabled)) {
+      response.writeHead(409, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ code: 409, data: { errorCode: 'engine_unavailable' } })); return;
+    }
     state.revision = snapshot.revision; state.entries = snapshot.entries;
+    state.onSnapshot?.();
+    if (state.waitForAck) await state.waitForAck;
     if (state.loseAck) { state.loseAck = false; request.socket.destroy(); return; }
     if (state.delay) await new Promise(resolve => setTimeout(resolve, state.delay));
     response.end(JSON.stringify({ code: 200, data: { apiVersion: 1, appliedRevision: state.ackRevision ?? state.revision, action: 'applied', ready: true, drainingEngineIds: state.draining ?? [] } }));
@@ -386,6 +392,87 @@ test('installed engines synchronize complete desired state and only acknowledge 
   delete host.state.ackRevision;
   await sync.reconcile();
   assert.equal(sync.status('engine-fixture').syncState, 'applied');
+});
+
+test('enabling a failing third plugin preserves the two applied plugins statuses', { skip: process.platform === 'win32' }, async t => {
+  const { createAgentEngineSync } = require('../dist-electron/main/modules/plugins/engine-resources');
+  const f = await engineFixture(t); let url = '', host;
+  const sync = createAgentEngineSync(f.app, {
+    getHostId: () => 'fixture-host', getBaseUrl: async () => url,
+    getDirectory: async () => ({ apiVersion: 1, ready: true, revision: host.state.revision, catalogGeneration: 'fixture',
+      engines: host.state.entries.map(entry => ({ ...entry, syncState: 'applied', dependencyState: 'ready', authState: 'authenticated', runtimeState: entry.enabled ? 'running' : 'stopped', capabilities: {} })) }),
+  });
+  host = await engineManagementServer(t, sync); url = host.url;
+  const stateReader = createPluginTestRuntime(f.root, { readAgentEngineState: (_app, id) => sync.status(id) });
+  for (const id of ['engine-fixture', 'second-engine']) {
+    const input = manifest(); input.id = input.desktop.bundleTopLevelDir = id;
+    await f.plugins.installFromArchive(f.app, await f.archive(input));
+    const result = await stateReader.services.startService(f.app, id);
+    assert.equal(result.ok, true, result.message);
+  }
+  const before = ['engine-fixture', 'second-engine'].map(id => sync.status(id));
+  const third = manifest(); third.id = third.desktop.bundleTopLevelDir = 'third-engine';
+  await f.plugins.installFromArchive(f.app, await f.archive(third));
+  host.state.rejectPlugin = 'third-engine';
+  await sync.setEnabled('third-engine', true);
+  assert.deepEqual(host.state.entries.filter(entry => entry.enabled).map(entry => entry.pluginId), ['engine-fixture', 'second-engine'], 'the rejected snapshot did not stop the applied engines');
+  assert.equal(sync.status('third-engine').syncState, 'pending');
+  assert.equal(sync.status('third-engine').lastError, 'engine_unavailable');
+  for (const [index, id] of ['engine-fixture', 'second-engine'].entries()) {
+    const status = sync.status(id);
+    assert.equal(status.syncState, 'applied', id + ' stays applied');
+    assert.equal(status.runtimeState, before[index].runtimeState, id + ' keeps its observed runtime');
+    assert.equal(status.dependencyState, 'ready');
+    assert.equal(status.lastError, '', 'a different plugin failure is not this plugin error');
+    const displayed = await stateReader.services.getServiceState(f.app, id);
+    assert.equal(displayed.status, 'running', 'the plugin page retains the running count');
+    assert.ok(!displayed.message.includes('engine_unavailable'));
+  }
+  delete host.state.rejectPlugin;
+  host.state.loseAck = true;
+  await sync.reconcile();
+  assert.equal(sync.status('engine-fixture').syncState, 'pending', 'a lost write ACK is an uncertain result, not a rejected publication');
+  await sync.reconcile();
+  assert.equal(sync.status('engine-fixture').syncState, 'applied');
+  host.state.epoch = 'epoch-two'; host.state.revision = 0; host.state.entries = [];
+  host.state.rejectPlugin = 'third-engine';
+  await sync.reconcile();
+  assert.equal(sync.status('engine-fixture').syncState, 'pending', 'a new Platform epoch cannot reuse old applied observations');
+  assert.equal(sync.status('engine-fixture').authState, 'unknown');
+  delete host.state.rejectPlugin;
+  await sync.reconcile();
+  assert.equal(sync.status('third-engine').syncState, 'applied');
+
+});
+
+test('a new plugin publication and early directory notification do not blank existing statuses', { skip: process.platform === 'win32' }, async t => {
+  const { createAgentEngineSync } = require('../dist-electron/main/modules/plugins/engine-resources');
+  const f = await engineFixture(t); let url = '', host;
+  const sync = createAgentEngineSync(f.app, {
+    getHostId: () => 'fixture-host', getBaseUrl: async () => url,
+    getDirectory: async () => ({ apiVersion: 1, ready: true, revision: host.state.revision, catalogGeneration: 'fixture',
+      engines: host.state.entries.map(entry => ({ ...entry, syncState: 'applied', dependencyState: 'ready', authState: 'authenticated', runtimeState: 'stopped', capabilities: {} })) }),
+  });
+  host = await engineManagementServer(t, sync); url = host.url;
+  await f.plugins.installFromArchive(f.app, await f.archive());
+  await sync.setEnabled('engine-fixture', true);
+  const next = manifest(); next.id = next.desktop.bundleTopLevelDir = 'new-engine';
+  const archive = await f.archive(next);
+  let release;
+  host.state.waitForAck = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { host.state.onSnapshot = resolve; });
+  const publishing = f.plugins.installFromArchive(f.app, archive);
+  await started;
+  try {
+    await sync.refreshDirectory(); // Platform pushes before the write acknowledgement arrives.
+    assert.equal(sync.status('new-engine').syncState, 'pending');
+    assert.equal(sync.status('engine-fixture').syncState, 'applied');
+    assert.equal(sync.status('engine-fixture').authState, 'authenticated');
+  } finally { release(); await publishing; }
+  assert.equal(sync.status('new-engine').syncState, 'applied');
+  sync.disconnected();
+  assert.equal(sync.status('engine-fixture').syncState, 'pending');
+  assert.equal(sync.status('engine-fixture').authState, 'unknown', 'a real disconnect still invalidates observations');
 });
 
 test('Desktop runtime update waits for both engines and keeps admission closed until cleanup or rollback', { skip: process.platform === 'win32' }, async t => {
@@ -658,7 +745,7 @@ test('independent real plugin ZIPs install through Desktop and retain the comple
   const entries = [];
   for (const name of ['codex', 'claude']) {
     const id = `zenmind-agent-${name}`;
-    const directory = path.join(process.env.ACP_PACKAGE_ROOT, id, '0.1.0', 'darwin-arm64');
+    const directory = path.join(process.env.ACP_PACKAGE_ROOT, id, '0.1.1', 'darwin-arm64');
     const receipt = JSON.parse(fs.readFileSync(path.join(directory, 'release.json')));
     const result = await plugins.installFromArchive(f.app, path.join(directory, receipt.archive));
     assert.equal(result.ok, true, result.message);
@@ -666,7 +753,7 @@ test('independent real plugin ZIPs install through Desktop and retain the comple
     const record = JSON.parse(fs.readFileSync(path.join(f.deliveryRoot, pointer.installationRef, 'record.json')));
     assert.equal(record.artifactDigest, receipt.artifactDigest, 'ZIP extraction must preserve native executable modes and every byte');
     assert.equal(record.source.archiveDigest, receipt.archiveDigest);
-    entries.push({ engineId: `${id}/${name}`, pluginId: id, pluginVersion: '0.1.0', installationRef: pointer.installationRef, artifactDigest: record.artifactDigest, enabled: true });
+    entries.push({ engineId: `${id}/${name}`, pluginId: id, pluginVersion: receipt.version, installationRef: pointer.installationRef, artifactDigest: record.artifactDigest, enabled: true });
     t.diagnostic(`${name}: real ZIP installed; complete fingerprint matches; archive ${receipt.archiveDigest}`);
   }
   if (process.env.ACP_LIVE_AUTH === '1') {

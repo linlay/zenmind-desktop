@@ -47,6 +47,8 @@ function createRuntime(app: App, ports: Ports) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   let appliedRevision = -1;
+  let appliedEntries: EngineInstallation[] = [];
+  let appliedEpoch = "";
   let lastError = "";
   let directory: EngineDirectory | undefined;
   let directoryGeneration = 0;
@@ -64,6 +66,10 @@ function createRuntime(app: App, ports: Ports) {
     try {
       const next = await ports.getDirectory(app);
       if (generation !== directoryGeneration) return;
+      // A directory push can arrive before the matching publication ACK. Keep
+      // confirmed observations until that ACK; never expose unconfirmed entries.
+      if (next.apiVersion === 1 && next.ready === true && appliedRevision >= 0 &&
+        next.revision === state.revision && next.revision > appliedRevision) return;
       directory = next.apiVersion === 1 && next.ready === true && next.revision === appliedRevision && Array.isArray(next.engines) ? next : undefined;
       if (next.apiVersion === 1 && next.ready === false) appliedRevision = -1;
     } catch {
@@ -119,7 +125,12 @@ function createRuntime(app: App, ports: Ports) {
     const text = await response.text();
     if (text.length > 1 << 20) throw new Error("engine_sync_unavailable");
     const payload = JSON.parse(text);
-    if (!response.ok || payload.code !== 200) throw new Error(["dependency_missing", "engine_unavailable", "artifact_untrusted", "artifact_digest_mismatch", "management_epoch_mismatch", "revision_conflict", "revision_stale", "registry_not_ready", "unsupported_deployment"].includes(payload.data?.errorCode) ? payload.data.errorCode : "engine_sync_unavailable");
+    if (!response.ok || payload.code !== 200) {
+      const code = ["dependency_missing", "engine_unavailable", "artifact_untrusted", "artifact_digest_mismatch", "management_epoch_mismatch", "revision_conflict", "revision_stale", "registry_not_ready", "unsupported_deployment"].includes(payload.data?.errorCode) ? payload.data.errorCode : "engine_sync_unavailable";
+      // A rejected atomic publication leaves the last confirmed directory intact.
+      throw Object.assign(new Error(code), { publicationRejected: route === "/snapshot" &&
+        ["dependency_missing", "engine_unavailable", "artifact_untrusted", "artifact_digest_mismatch"].includes(code) });
+    }
     return payload.data as T;
   }
   async function synchronize() {
@@ -129,8 +140,7 @@ function createRuntime(app: App, ports: Ports) {
       const revision = state.revision + (signature !== state.signature ? 1 : 0);
       if (!Number.isSafeInteger(revision) || revision < 1 || entries.length > 256) throw new Error("invalid_engine_revision");
       if (signature !== state.signature) {
-        appliedRevision = -1;
-        invalidateDirectory();
+        directoryGeneration++;
         persist({ ...state, revision, signature });
       }
       const session = authority;
@@ -139,18 +149,26 @@ function createRuntime(app: App, ports: Ports) {
       if (authority !== session) return;
       if (status.appliedRevision < 0 || status.apiVersion !== 1 || status.hostId !== session.hostId || !status.epoch || !Number.isSafeInteger(status.appliedRevision)) throw new Error("engine_sync_unavailable");
       if (status.appliedRevision > state.revision) throw new Error("revision_stale");
+      if (!status.ready || status.epoch !== appliedEpoch || status.appliedRevision !== appliedRevision) {
+        appliedRevision = -1;
+        invalidateDirectory();
+      }
       // Full snapshots also repair lost notifications and a fresh Platform epoch.
       const ack = await request<SyncAck>(session, "/snapshot", status.epoch, { apiVersion: 1, revision: state.revision, entries });
       if (authority !== session) return;
       if (ack.apiVersion !== 1 || ack.appliedRevision !== state.revision || ack.ready !== true || !["applied", "idempotent"].includes(ack.action)) throw new Error("engine_sync_unavailable");
       appliedRevision = state.revision;
+      appliedEntries = entries;
+      appliedEpoch = status.epoch;
       lastError = "";
       await refreshDirectory();
       return ack;
     } catch (error) {
-      appliedRevision = -1;
+      if (!(error instanceof Error && "publicationRejected" in error && error.publicationRejected === true) || appliedRevision < 0) {
+        appliedRevision = -1;
+        invalidateDirectory();
+      }
       lastError = error instanceof Error && /^[a-z_]+$/.test(error.message) ? error.message : "engine_sync_unavailable";
-      invalidateDirectory();
     }
     notifyChanged();
   }
@@ -200,7 +218,6 @@ function createRuntime(app: App, ports: Ports) {
     }),
     setEnabled: (pluginId: string, enabled: boolean) => serializePluginOperation(app, async () => {
       persist({ ...state, intent: { ...state.intent, [pluginId]: enabled ? "enabled" : "disabled" } });
-      appliedRevision = -1;
       await synchronize();
     }),
     refreshDirectory,
@@ -210,7 +227,9 @@ function createRuntime(app: App, ports: Ports) {
       notifyChanged();
     },
     status(pluginId: string) {
-      const applied = appliedRevision === state.revision && Boolean(authority);
+      const desired = (JSON.parse(state.signature || "[]") as EngineInstallation[]).filter(entry => entry.pluginId === pluginId);
+      const confirmed = appliedEntries.filter(entry => entry.pluginId === pluginId);
+      const applied = appliedRevision >= 0 && Boolean(authority) && JSON.stringify(desired) === JSON.stringify(confirmed);
       const engines = applied ? directory?.engines.filter(engine => engine.pluginId === pluginId) ?? [] : [];
       // Plugins may declare multiple engines. Show a non-ready state before a ready one.
       const aggregate = (key: "dependencyState" | "authState" | "runtimeState", ready: string) =>
@@ -218,17 +237,16 @@ function createRuntime(app: App, ports: Ports) {
       return {
         desired: state.intent[pluginId] ?? "disabled",
         syncState: applied ? "applied" as const : "pending" as const,
-        revision: state.revision,
-        dependencyState: lastError === "dependency_missing" ? "missing" : aggregate("dependencyState", "ready"),
+        revision: applied ? appliedRevision : state.revision,
+        dependencyState: !applied && lastError === "dependency_missing" ? "missing" : aggregate("dependencyState", "ready"),
         authState: aggregate("authState", "authenticated"),
         runtimeState: aggregate("runtimeState", "stopped"),
-        lastError
+        lastError: applied ? "" : lastError
       };
     },
     // Called inside the plugin lifecycle transaction, before any package deletion.
     async revoke(pluginId: string) {
       persist({ ...state, intent: { ...state.intent, [pluginId]: "removed" } });
-      appliedRevision = -1;
       const ack = await synchronize();
       if (ack?.drainingEngineIds.some(id => id.startsWith(`${pluginId}/`))) return { ok: false, message: "engine_busy" };
       return { ok: appliedRevision === state.revision && Boolean(authority), message: lastError || undefined };
