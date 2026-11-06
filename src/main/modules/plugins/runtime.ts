@@ -4,7 +4,6 @@ import type { App } from "electron";
 import type { DesktopPetTaskItem } from "../../../shared/contracts";
 import {
   configurePluginBridge,
-  type AcpBridgeMutation,
   emitPluginSystemEvent,
   emitPluginBridgeHook,
   publishPluginBridgeAssistantActiveTasks,
@@ -24,13 +23,11 @@ import {
 import type { PluginClipboardBridge } from "./clipboard";
 
 export type PluginBridgeRuntimeOptions = {
-  mutateAcpBridge: AcpBridgeMutation;
   app: App;
   clipboardBridge: PluginClipboardBridge;
   getServiceState: (serviceId: string) => Promise<any>;
   listServices: (app: App) => Promise<any[]>;
   retryPendingPluginResourceSync: (app: App) => Promise<unknown>;
-  notifyAgentPlatformConfigChanged: () => void;
   getAssistantActiveTasks: () => unknown;
   queryAgentPlatform: (params: { message: string; agentKey?: string; source?: string; action?: string }) => Promise<unknown> | unknown;
   onError: (message: string, details: Record<string, unknown>) => void;
@@ -43,7 +40,6 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
 
   function configure() {
     configurePluginBridge({
-      mutateAcpBridge: options.mutateAcpBridge,
       systemRequest: (pluginId, method, params) => {
         if (stopped) throw new Error("plugin bridge runtime has stopped");
         const service = getService(pluginId);
@@ -55,7 +51,6 @@ export function createPluginBridgeRuntime(options: PluginBridgeRuntimeOptions) {
         return systemWindows.handle(pluginId, getInstallDir(options.app, service), method, params);
       },
       getServiceState: options.getServiceState,
-      notifyAgentPlatformConfigChanged: options.notifyAgentPlatformConfigChanged,
       runDesktopPetBanner: (params) => showDesktopPetBanner(options.app, params as any),
       showSystemUpdateOverlay: (params) => showSystemUpdateOverlay(params as any),
       getAssistantActiveTasks: options.getAssistantActiveTasks,

@@ -3,7 +3,7 @@ export type ProjectCreateType = "general" | "coder" | "kbase" | "acp";
 export const PROJECT_CREATE_TYPES: readonly ProjectCreateType[] = ["general", "coder", "kbase", "acp"];
 
 export type ProjectAgentCreateOptions = {
-  acpBridgeId?: string;
+  engineId?: string;
   modelKey?: string;
   definition?: Record<string, unknown>;
 };
@@ -19,22 +19,17 @@ export function buildProjectAgentCreateRequest(
   workspaceDir: string,
   options: ProjectAgentCreateOptions = {}
 ) {
-  const acpBridgeId = String(options.acpBridgeId || "").trim();
+  const engineId = String(options.engineId || "").trim();
   const modelKey = String(options.modelKey || "").trim();
   const runtimeConfig: Record<string, string> = {
     workspaceRoot: workspaceDir
   };
-  // A coder project with a bridge is the external engine; older callers
-  // express it that way instead of the explicit "acp" type.
-  const useAcp = projectType === "acp" || (projectType === "coder" && Boolean(acpBridgeId));
-  if (useAcp && acpBridgeId) {
-    runtimeConfig.acpBridgeId = acpBridgeId;
-  }
-
+  if ("acpBridgeId" in options) throw new Error("acpBridgeId was removed; use engineId with projectType acp");
+  const useAcp = projectType === "acp";
+  if (!useAcp && engineId) throw new Error("engineId requires projectType acp");
+  if (useAcp) runtimeConfig.engineId = engineId;
   const definition: Record<string, unknown> = useAcp
-    // Platform never infers the engine from acpBridgeId; it must be explicit.
-    // The external engine has no mode of its own; CODER is kept for clarity.
-    ? { mode: "CODER", engine: "acp", runtimeConfig }
+    ? { engine: "acp", runtimeConfig }
     : { ...options.definition, mode: PROJECT_MODES[projectType as Exclude<ProjectCreateType, "acp">], runtimeConfig };
   if (modelKey && !useAcp) {
     definition.modelConfig = { modelKey };
@@ -45,7 +40,7 @@ export function buildProjectAgentCreateRequest(
 
 export function buildCoderProjectAgentCreateRequest(
   workspaceDir: string,
-  options: { acpBridgeId?: string } = {}
+  options: { engineId?: string } = {}
 ) {
   return buildProjectAgentCreateRequest("coder", workspaceDir, options);
 }

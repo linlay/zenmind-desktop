@@ -1,6 +1,14 @@
 import type { App } from "electron";
+import type { AgentEngineSyncState } from "../../../shared/contracts/services";
 
 export type ServicesIntegrationPorts = {
+  readAgentEngineState?: (app: App, pluginId: string) => AgentEngineSyncState;
+  agentEngines?: (app: App) => {
+    prepareLaunch(): Promise<{ args: string[]; complete(success: boolean): void }>;
+    hasAuthority(): boolean;
+    stopped(): void;
+    reconcile(): Promise<void>;
+  };
   issueAgentAccessToken: (app: App, reason: any) => Promise<any>;
   getDesktopDeviceId: (app: App) => string;
   getDesktopDeviceInfo: (app: App) => any;

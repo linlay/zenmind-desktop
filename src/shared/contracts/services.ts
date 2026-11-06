@@ -48,7 +48,18 @@ export interface ServicePaths {
   logDir: string;
 }
 
+export interface AgentEngineSyncState {
+  desired: "enabled" | "disabled" | "removed";
+  syncState: "applied" | "pending";
+  revision: number;
+  dependencyState: string;
+  authState: string;
+  runtimeState: string;
+  lastError: string;
+}
+
 export interface ServiceState {
+  agentEngineSync?: AgentEngineSyncState;
   id: ServiceId;
   name: string;
   kind: ServiceKind;

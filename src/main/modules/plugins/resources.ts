@@ -1,3 +1,4 @@
+import { getAgentEngineSync } from "./engine-resources";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -345,6 +346,7 @@ export function configurePluginResources(options: { callAgentPlatform?: AgentPla
 }
 
 export function initializePluginResourceState(app: App, service: ServiceDefinition) {
+  if (service.resources.agentEngines?.length) return getAgentEngineSync(app)?.status(service.id).desired === "enabled" ? "running" : "stopped";
   if (service.kind !== "plugin" || !hasResourcesToManage(app, service)) {
     return "stopped" satisfies PluginResourceDesiredStatus;
   }
@@ -352,6 +354,7 @@ export function initializePluginResourceState(app: App, service: ServiceDefiniti
 }
 
 export function readPluginResourceDesiredStatus(app: App, service: ServiceDefinition) {
+  if (service.resources.agentEngines?.length) return getAgentEngineSync(app)?.status(service.id).desired === "enabled" ? "running" : "stopped";
   if (service.kind !== "plugin" || !hasResourcesToManage(app, service)) {
     return "stopped" satisfies PluginResourceDesiredStatus;
   }
@@ -364,6 +367,12 @@ export async function syncPluginResources(
   pluginDir: string,
   manager: WebappManager = webappManager
 ) {
+  if (service.resources.agentEngines?.length) {
+    const sync = getAgentEngineSync(app);
+    if (!sync) throw new Error("Agent engine synchronization is not connected; registry is not ready");
+    await sync.setEnabled(service.id, true);
+    return;
+  }
   return serializeResources(app, service, async () => {
     if (service.kind !== "plugin" || !hasResourcesToManage(app, service)) {
       return { ok: true, message: t("pluginResources.noneDeclared") };
@@ -380,6 +389,12 @@ export async function stopPluginResources(
   service: ServiceDefinition,
   manager: WebappManager = webappManager
 ) {
+  if (service.resources.agentEngines?.length) {
+    const sync = getAgentEngineSync(app);
+    if (!sync) throw new Error("Agent engine synchronization is not connected; registry is not ready");
+    await sync.setEnabled(service.id, false);
+    return;
+  }
   return serializeResources(app, service, async () => {
     if (service.kind !== "plugin" || !hasResourcesToManage(app, service)) {
       return { ok: true, message: t("pluginResources.noneDeclared") };
@@ -394,6 +409,7 @@ export async function stopPluginResources(
 }
 
 export async function retryPendingPluginResourceSync(app: App) {
+  await getAgentEngineSync(app)?.reconcile();
   const errors: unknown[] = [];
   for (const service of getAllServices()) {
     if (service.kind !== "plugin") {

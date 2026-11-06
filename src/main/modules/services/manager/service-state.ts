@@ -272,7 +272,35 @@ export async function getServiceState(
     }).trim();
   }
 
+  const agentEngineSync = service.resources.agentEngines?.length
+    ? options.integrationPorts?.readAgentEngineState?.(app, service.id)
+    : undefined;
+  if (agentEngineSync && installed && initializationSucceeded) {
+    // Resource ownership records intent; only an applied directory enables an engine.
+    // Keep pending activation stopped so the normal Start action can retry it.
+    if (status === "running" && (agentEngineSync.syncState !== "applied" || agentEngineSync.desired !== "enabled")) {
+      status = "stopped";
+    }
+    const engineStateLabel = (value: string) => {
+      const states = ["ready", "missing", "auth_required", "authenticated", "stopped", "running", "draining", "failed", "error", "unavailable"] as const;
+      const state = states.find(state => state === value) ?? "unknown";
+      return t(`service.engine.state.${state}`);
+    };
+    statusLabel = t(agentEngineSync.syncState === "pending" ? "service.engine.pending" : "service.engine.applied");
+    message = t("service.engine.summary", {
+      sync: statusLabel,
+      dependency: engineStateLabel(agentEngineSync.dependencyState),
+      auth: engineStateLabel(agentEngineSync.authState),
+      runtime: engineStateLabel(agentEngineSync.runtimeState)
+    });
+    if (agentEngineSync.lastError) message += ` (${agentEngineSync.lastError})`;
+    if (agentEngineSync.desired === "removed" && agentEngineSync.syncState === "applied") {
+      message = t("service.engine.removalConfirmed");
+    }
+  }
+
   return {
+    ...(agentEngineSync ? { agentEngineSync } : {}),
     id: service.id,
     name: service.name,
     kind: service.kind,

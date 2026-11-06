@@ -29,6 +29,8 @@ export async function runServiceCommand(
     args: command.slice(1).join(",") || "none"
   });
   const installDir = getInstallDir(app, service);
+  let engineLaunch: { args: string[]; complete(success: boolean): void } | undefined;
+  let succeeded = false;
   try {
     const shouldRefreshBuiltinAsset = options.refreshBuiltinAsset !== false;
     if (service.kind === "builtin" && shouldRefreshBuiltinAsset) {
@@ -82,10 +84,15 @@ export async function runServiceCommand(
       layout,
       options.commandKind ?? "start"
     );
+    if (service.id === "agent-platform" && (options.commandKind ?? "start") === "start") {
+      engineLaunch = await options.integrationPorts?.agentEngines?.(app).prepareLaunch();
+      if (engineLaunch) commandForExec.push(...engineLaunch.args);
+    }
     await runExecFile(commandForExec[0], commandForExec.slice(1), installDir, {
       timeoutMs: options.timeoutMs,
       env: buildDesktopServiceCommandEnv(app, service, layout, options.env, options.integrationPorts)
     });
+    succeeded = true;
     return {
       ok: true,
       message: successMessage,
@@ -95,6 +102,7 @@ export async function runServiceCommand(
       })
     } satisfies ServiceCommandResult;
   } finally {
+    engineLaunch?.complete(succeeded);
     timing.end();
   }
 }

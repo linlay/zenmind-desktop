@@ -43,20 +43,6 @@ type PluginBridgeRequestResult = {
   error?: string;
 };
 
-type AcpBridgeMutationInput = { bridgeId: string; baseUrl?: string; timeoutMs?: number; authToken?: string };
-export type AcpBridgeMutation = (
-  sourcePluginId: string,
-  operation: "upsert" | "remove",
-  input: AcpBridgeMutationInput
-) => Promise<{ changed: boolean; restartRequired: boolean; removed?: boolean }>;
-
-type AcpBridgeInput = {
-  bridgeId: string;
-  baseUrl: string;
-  timeoutMs: number;
-  authToken?: string;
-};
-
 type AgentPlatformQueryInput = {
   message: string;
   agentKey?: string;
@@ -72,8 +58,6 @@ const MAX_PENDING_PLUGIN_EVENTS = 20;
 let systemRequestCallback: ((pluginId: string, method: string, params: unknown) => Promise<unknown>) | null = null;
 let desktopReady = false;
 let getServiceStateCallback: ((serviceId: string) => Promise<ServiceState>) | null = null;
-let mutateAcpBridgeCallback: AcpBridgeMutation | null = null;
-let notifyAgentPlatformConfigChangedCallback: (() => void) | null = null;
 let runDesktopPetBannerCallback: ((params: unknown) => unknown) | null = null;
 let showSystemUpdateOverlayCallback: ((params: unknown) => unknown) | null = null;
 let getAssistantActiveTasksCallback: (() => unknown) | null = null;
@@ -251,52 +235,6 @@ function respondToRequest(client: BridgeClient, id: string, response: PluginBrid
   });
 }
 
-function normalizeAcpBridgeInput(params: unknown): AcpBridgeInput {
-  const record = asObject(params);
-  const bridgeId = asString(record.bridgeId);
-  const baseUrl = asString(record.baseUrl);
-  const timeoutMs = asNumber(record.timeoutMs) ?? 300_000;
-  if (!/^[a-z0-9][a-z0-9._-]*$/iu.test(bridgeId)) {
-    throw new Error("bridgeId must be a non-empty identifier");
-  }
-  const parsed = new URL(baseUrl);
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("baseUrl must be an HTTP URL");
-  }
-  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
-    throw new Error("timeoutMs must be a positive integer");
-  }
-  return {
-    bridgeId,
-    baseUrl: parsed.toString().replace(/\/$/u, ""),
-    timeoutMs,
-    ...(typeof record.authToken === "string" ? { authToken: record.authToken } : {})
-  };
-}
-
-async function mutateAgentPlatformAcpBridge(sourcePluginId: string, operation: "upsert" | "remove", input: AcpBridgeMutationInput) {
-  if (!mutateAcpBridgeCallback) throw new Error("ACP registration API is unavailable");
-  const result = await mutateAcpBridgeCallback(sourcePluginId, operation, input);
-  if (typeof result?.changed !== "boolean" || typeof result?.restartRequired !== "boolean") {
-    throw new Error("Invalid ACP registration response");
-  }
-  if (result.changed) {
-    notifyAgentPlatformConfigChangedCallback?.();
-    emitPluginBridgeHook("agentPlatform.configChanged", { sourcePluginId, bridgeId: input.bridgeId });
-  }
-  return result;
-}
-
-async function upsertAgentPlatformAcpBridge(_app: App, sourcePluginId: string, params: unknown) {
-  return mutateAgentPlatformAcpBridge(sourcePluginId, "upsert", normalizeAcpBridgeInput(params));
-}
-
-async function removeAgentPlatformAcpBridge(_app: App, sourcePluginId: string, params: unknown) {
-  const bridgeId = asString(asObject(params).bridgeId);
-  if (!/^[a-z0-9][a-z0-9._-]*$/iu.test(bridgeId)) throw new Error("bridgeId must be a non-empty identifier");
-  return mutateAgentPlatformAcpBridge(sourcePluginId, "remove", { bridgeId });
-}
-
 function normalizeAgentPlatformQueryInput(params: unknown): AgentPlatformQueryInput {
   const record = asObject(params);
   const message = asString(record.message);
@@ -385,12 +323,6 @@ async function handleBridgeRequest(
         ? await getServiceStateCallback(serviceId)
         : latestServiceStates.get(serviceId) ?? null;
       return { ok: true, result: { service: state } };
-    }
-    if (context.method === "agentPlatform.upsertAcpBridge") {
-      return { ok: true, result: await upsertAgentPlatformAcpBridge(app, context.sourcePluginId, context.params) };
-    }
-    if (context.method === "agentPlatform.removeAcpBridge") {
-      return { ok: true, result: await removeAgentPlatformAcpBridge(app, context.sourcePluginId, context.params) };
     }
     if (context.method === "agentPlatform.query") {
       if (!queryAgentPlatformCallback) {
@@ -591,10 +523,8 @@ function createBridgeRecord(app: App, service: ServiceDefinition): BridgeRecord 
 }
 
 export function configurePluginBridge(options: {
-  mutateAcpBridge?: AcpBridgeMutation;
   systemRequest?: (pluginId: string, method: string, params: unknown) => Promise<unknown>;
   getServiceState?: (serviceId: string) => Promise<ServiceState>;
-  notifyAgentPlatformConfigChanged?: () => void;
   runDesktopPetBanner?: (params: unknown) => unknown;
   showSystemUpdateOverlay?: (params: unknown) => unknown;
   getAssistantActiveTasks?: () => unknown;
@@ -613,10 +543,8 @@ export function configurePluginBridge(options: {
   cleanupPluginBridgePlugin?: (pluginId: string) => void;
   queryAgentPlatform?: (params: AgentPlatformQueryInput) => unknown;
 }) {
-  mutateAcpBridgeCallback = options.mutateAcpBridge ?? null;
   systemRequestCallback = options.systemRequest ?? null;
   getServiceStateCallback = options.getServiceState ?? null;
-  notifyAgentPlatformConfigChangedCallback = options.notifyAgentPlatformConfigChanged ?? null;
   runDesktopPetBannerCallback = options.runDesktopPetBanner ?? null;
   showSystemUpdateOverlayCallback = options.showSystemUpdateOverlay ?? null;
   getAssistantActiveTasksCallback = options.getAssistantActiveTasks ?? null;
@@ -733,9 +661,6 @@ export const __testInternals = {
   createPluginBridgePath,
   isHookSubscribed,
   isRequestAllowed,
-  normalizeAcpBridgeInput,
-  upsertAgentPlatformAcpBridge,
-  removeAgentPlatformAcpBridge,
   normalizeAgentPlatformQueryInput,
   extractAgentPlatformQueryText,
   normalizeAgentPlatformQueryResult

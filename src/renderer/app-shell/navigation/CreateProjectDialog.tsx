@@ -13,6 +13,7 @@ import {
   findProjectCreationType,
   initialProjectCreationSelection,
   projectCreationProblem,
+  projectEngineStatus,
   resolveProjectCreationModel,
   type ProjectCreationProblem,
   type ProjectCreationSelection,
@@ -52,7 +53,8 @@ const PROBLEM_MESSAGES: Record<ProjectCreationProblem, TranslationKey> = {
   typeUnavailable: "sidebar.project.typeUnavailable",
   directoryRequired: "sidebar.project.directoryRequired",
   modelRequired: "sidebar.project.modelRequired",
-  acpBridgeRequired: "sidebar.project.acpRequired",
+  engineRequired: "sidebar.project.acpRequired",
+  engineUnavailable: "sidebar.project.engineUnavailable",
 };
 
 function groupMembers(group: AssistantProjectCreationGroup, t: Translate) {
@@ -80,55 +82,37 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
   const [workspaceDir, setWorkspaceDir] = useState(initialWorkspaceDir);
   const [options, setOptions] = useState<AssistantProjectCreationOptions | null>(() => cachedOptions ? orderedOptions(cachedOptions) : null);
   const [selection, setSelection] = useState<ProjectCreationSelection | null>(() => cachedOptions ? initialProjectCreationSelection(orderedOptions(cachedOptions)) : null);
-  const selectionTouched = useRef(false);
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [bridgeStatus, setBridgeStatus] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-    // Desktop runs each ACP bridge as a local service named "<id>-acp-bridge";
-    // its status is shown next to the engines that Agent Platform offers.
-    void window.electronAPI.services.list().then(
-      (services) => {
-        if (cancelled) {
-          return;
-        }
-        const next: Record<string, string> = {};
-        for (const service of services) {
-          if (service.id.endsWith("-acp-bridge")) {
-            next[service.id.slice(0, -"-acp-bridge".length)] = service.statusLabel || service.status;
-          }
-        }
-        setBridgeStatus(next);
-      },
-      (reason) => console.warn("[assistant] failed to list ACP bridge services", reason),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  useEffect(() => cache.subscribe(() => {
+    setOptionsLoading(true);
+    setLoadAttempt(value => value + 1);
+  }), [cache]);
 
   useEffect(() => {
     let cancelled = false;
     setLoadError("");
+    setOptionsLoading(true);
     void cache.load(loadAttempt > 0).then(
       (result) => {
         if (cancelled) {
           return;
         }
+        setOptionsLoading(false);
         if (!result.ok || !result.options) {
           setLoadError(result.message || t("sidebar.project.optionsFailed"));
           return;
         }
         const next = orderedOptions(result.options);
         setOptions(next);
-        setSelection(current => current && selectionTouched.current ? current : initialProjectCreationSelection(next));
+        setSelection(current => current ?? initialProjectCreationSelection(next));
       },
       (reason) => {
         if (!cancelled) {
+          setOptionsLoading(false);
           setLoadError(reason instanceof Error ? reason.message : String(reason));
         }
       },
@@ -152,7 +136,6 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
   }, [options, type]);
 
   function update(next: ProjectCreationSelection) {
-    selectionTouched.current = true;
     setSelection(next);
     setError("");
   }
@@ -167,7 +150,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!options || !selection || pending || loadError) {
+    if (!options || !selection || pending || loadError || optionsLoading) {
       return;
     }
     if (problem) {
@@ -249,7 +232,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
                 {PROJECT_TYPES.map(({ key, label, Icon }) => {
                   const item = options.types.find((type) => type.key === key);
                   return (
-                    <label key={key} title={item?.available ? undefined : t("sidebar.project.typeUnavailable")}>
+                    <label key={key} title={item?.available ? undefined : item?.unavailableReason}>
                       <input
                         type="radio"
                         name="create-project-type"
@@ -263,7 +246,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
                       <Icon aria-hidden="true" className="sidebar-project-type-icon" />
                       <span>{t(label)}</span>
                       {!item?.available ? (
-                        <small>{t(key === "acp" ? "sidebar.project.noRunningAcp" : "sidebar.project.typeUnavailable")}</small>
+                        <small>{item?.unavailableReason || t("sidebar.project.typeUnavailable")}</small>
                       ) : null}
                     </label>
                   );
@@ -335,18 +318,17 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
               <label className="sidebar-website-dialog-field">
                 <span>{t("sidebar.project.acpEngine")}</span>
                 <select
-                  value={selection.acpBridgeId}
-                  disabled={pending || (type.acpBridges ?? []).length === 0}
-                  onChange={(event) => update({ ...selection, acpBridgeId: event.target.value })}
+                  value={selection.engineId}
+                  disabled={pending || optionsLoading}
+                  onChange={(event) => update({ ...selection, engineId: event.target.value })}
                 >
-                  {(type.acpBridges ?? []).length === 0 ? (
-                    <option value="">{t("sidebar.project.noRunningAcp")}</option>
-                  ) : null}
-                  {(type.acpBridges ?? []).map((bridge) => (
-                    <option value={bridge.id} key={bridge.id}>
-                      {bridgeStatus[bridge.id]
-                        ? t("sidebar.project.acpEngineRunning", { name: bridge.id, status: bridgeStatus[bridge.id] })
-                        : bridge.id}
+                  {!selection.engineId && <option value="">{t("sidebar.project.noRunningAcp")}</option>}
+                  {selection.engineId && !type.engineDirectory?.engines.some(engine => engine.engineId === selection.engineId) && (
+                    <option value={selection.engineId} disabled>{selection.engineId} — {t("sidebar.project.engineUnavailable")}</option>
+                  )}
+                  {(type.engineDirectory?.engines ?? []).map(engine => (
+                    <option value={engine.engineId} key={engine.engineId} disabled={!engine.enabled || engine.syncState !== "applied" || engine.dependencyState !== "ready"}>
+                      {engine.engineId} — {t(`sidebar.project.engineState.${projectEngineStatus(engine)}`)}
                     </option>
                   ))}
                 </select>
@@ -402,7 +384,7 @@ export function CreateProjectDialog({ workspaceDir: initialWorkspaceDir, t, onCl
           <button
             type="submit"
             className="sidebar-website-primary-button"
-            disabled={pending || !options || !selection || Boolean(problem) || Boolean(loadError)}
+            disabled={pending || !options || !selection || Boolean(problem) || optionsLoading || Boolean(loadError)}
             title={problem ? t(PROBLEM_MESSAGES[problem]) : undefined}
           >
             {pending ? t("sidebar.project.creating") : t("sidebar.project.create")}

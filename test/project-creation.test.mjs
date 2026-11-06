@@ -42,10 +42,10 @@ function creationOptions() {
       nativeType("coder", { defaultGroups: ["web-data"] }),
       nativeType("kbase", { defaultModelKey: "", defaultModelAvailable: false }),
       {
-        key: "acp", label: "External", mode: "CODER", engine: "acp", available: true,
+        key: "acp", label: "External", engine: "acp", available: true,
         workspaceRequired: true, modelRequired: false, defaultModelAvailable: false,
         supportsGroups: false, groupsUnsupportedReason: "managed by the engine",
-        baseTools: [], defaultGroups: [], acpBridges: [{ id: "claude" }, { id: "codex" }],
+        baseTools: [], defaultGroups: [], engineDirectory: { apiVersion: 1, ready:true, catalogGeneration:"g", revision:1, engines: ["claude/agent", "codex/agent"].map(engineId => ({engineId, pluginId:engineId, pluginVersion:"1.0.0", enabled:true, syncState:"applied",dependencyState:"ready",authState:"unknown",runtimeState:"stopped",capabilities:{}})) },
       },
     ],
     groups: [group("office"), group("web-data"), group("automation"), group("broken", false)],
@@ -94,7 +94,7 @@ test("switching type always restores capability and model defaults", () => {
   // External engines do not receive native capabilities or a model.
   const acp = changeProjectCreationType(options, selection, "acp");
   assert.deepEqual(acp.groups, []);
-  assert.equal(acp.acpBridgeId, "claude");
+  assert.equal(acp.engineId, "claude/agent");
 
   // Deselecting everything is valid until switching type.
   let empty = toggleProjectCreationGroup(options, selection, "web-data");
@@ -124,7 +124,7 @@ test("an unusable default model must be replaced by an explicit choice", () => {
   assert.equal(resolveProjectCreationModel(options, { ...selection, modelKey: "ghost" }), "");
 });
 
-test("requests carry concrete configuration for native types and only the bridge for the external engine", () => {
+test("requests carry concrete configuration for native types and only the plugin identity for the external engine", () => {
   const options = creationOptions();
   const general = initialProjectCreationSelection(options);
   // The type default model is left for Agent Platform to apply.
@@ -137,14 +137,23 @@ test("requests carry concrete configuration for native types and only the bridge
 
   const acp = changeProjectCreationType(options, { ...general, modelKey: "other-model" }, "acp");
   assert.equal(projectCreationProblem(options, acp, "/project"), null);
-  assert.deepEqual(buildProjectCreationRequest(options, { ...acp, acpBridgeId: "codex" }, "/project"), {
+  assert.deepEqual(buildProjectCreationRequest(options, { ...acp, engineId: "codex/agent" }, "/project"), {
     projectType: "acp",
     workspaceDir: "/project",
     definition: {},
-    acpBridgeId: "codex",
+    engineId: "codex/agent",
   });
-  assert.equal(projectCreationProblem(options, { ...acp, acpBridgeId: "" }, "/project"), "acpBridgeRequired");
+  assert.equal(projectCreationProblem(options, { ...acp, engineId: "" }, "/project"), "engineRequired");
 
   options.types[3].available = false;
   assert.equal(projectCreationProblem(options, acp, "/project"), "typeUnavailable");
+});
+
+
+test("a revoked engine remains selected and cannot be submitted or silently replaced", () => {
+ const options=creationOptions();
+ const selected=changeProjectCreationType(options, initialProjectCreationSelection(options), "acp");
+ options.types[3].engineDirectory.engines=options.types[3].engineDirectory.engines.filter(e=>e.engineId!==selected.engineId);
+ assert.equal(projectCreationProblem(options,selected,"/project"), "engineUnavailable");
+ assert.equal(changeProjectCreationType(options,selected,"acp").engineId, selected.engineId);
 });

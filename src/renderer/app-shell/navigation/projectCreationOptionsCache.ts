@@ -7,29 +7,43 @@ export function createProjectCreationOptionsCache(
   load: () => Promise<AssistantProjectCreationOptionsResult>,
   now = Date.now,
 ) {
+  let revision = 0;
+  const listeners = new Set<() => void>();
   let options: AssistantProjectCreationOptions | null = null;
   let loadedAt = 0;
   let pending: Promise<AssistantProjectCreationOptionsResult> | null = null;
   return {
     peek: () => options,
+    invalidate() {
+      revision++;
+      options = null;
+      pending = null;
+      listeners.forEach(listener => listener());
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
     load(force = false): Promise<AssistantProjectCreationOptionsResult> {
       if (pending) return pending;
       if (!force && options && now() - loadedAt < OPTIONS_TTL_MS) {
         return Promise.resolve({ ok: true, message: "", options });
       }
+      const version = revision;
       pending = Promise.resolve().then(load).then((result) => {
+        if (version !== revision) return { ok: false, message: "Engine directory changed" };
         if (result.ok && result.options) {
           options = result.options;
           loadedAt = now();
         }
         return result;
-      }).finally(() => { pending = null; });
+      }).finally(() => { if (version === revision) pending = null; });
       return pending;
     },
   };
 }
 
-type OptionsApi = Pick<Window["electronAPI"]["assistant"], "getProjectCreationOptions">;
+type OptionsApi = Pick<Window["electronAPI"]["assistant"], "getProjectCreationOptions" | "onNavigationPushEvent">;
 type OptionsCache = ReturnType<typeof createProjectCreationOptionsCache>;
 const caches = new WeakMap<OptionsApi, Map<SupportedLocale, OptionsCache>>();
 
@@ -44,6 +58,7 @@ export function projectCreationOptionsCache(locale: SupportedLocale, api = windo
   if (!cache) {
     cache = createProjectCreationOptionsCache(() => api.getProjectCreationOptions());
     localized.set(locale, cache);
+    api.onNavigationPushEvent?.(event => { if (event.type === "agent_engines.changed") cache!.invalidate(); });
   }
   return cache;
 }

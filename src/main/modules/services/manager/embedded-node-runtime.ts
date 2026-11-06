@@ -63,7 +63,7 @@ async function probeNode(executable: string) {
   catch { throw new Error("Desktop embedded Node mode is unavailable"); }
 }
 
-async function verifyNode(executable: string, options: EmbeddedNodeRuntimeOptions) {
+async function verifyNode(executable: string, options: Pick<EmbeddedNodeRuntimeOptions, "nodeVersion" | "arch" | "probe">) {
   const actual = await (options.probe ?? probeNode)(executable);
   if (actual.node !== options.nodeVersion || actual.arch !== options.arch) throw new Error("Desktop Node runtime version or architecture mismatch");
 }
@@ -245,4 +245,13 @@ export function getPreparedEmbeddedNodeStartEnv(app: App): NodeJS.ProcessEnv | u
   const inherited = buildServiceEnv();
   const servicePath = [runtime.binDir, inherited.PATH ?? inherited.Path ?? ""].filter(Boolean).join(path.delimiter);
   return process.platform === "win32" ? { PATH: servicePath, Path: servicePath } : { PATH: servicePath };
+}
+
+/** Engine installation consumes the same prepared runtime as Platform startup. */
+export async function getPreparedEmbeddedNodeRuntime(app: App) {
+  await ensureEmbeddedNodeRuntime(app);
+  const runtime = appRuntimes.get(app);
+  if (!runtime) throw new Error("Managed engine Node runtime is unavailable outside Desktop");
+  await verifyNode(runtime.node, { nodeVersion: runtime.nodeVersion, arch: process.arch });
+  return { ...runtime, arch: process.arch };
 }

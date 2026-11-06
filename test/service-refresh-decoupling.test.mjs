@@ -102,3 +102,46 @@ test("agent-platform config and env migration helpers are no longer exported by 
   assert.equal("normalizeAgentPlatformFileToolsConfigContent" in envNormalization, false);
   assert.equal("normalizeAgentPlatformDurationConfigContent" in envNormalization, false);
 });
+
+test('service notifications invalidate an in-flight renderer list and fetch the latest state', {
+  skip: process.env.RUN_APPEARANCE_PROVIDER_ELECTRON_TEST !== '1', timeout: 30000
+}, async t => {
+  const { build } = await import('esbuild');
+  const { spawn } = await import('node:child_process');
+  const electron = require('electron');
+  const root = createTempDir(t, 'service-refresh-electron-');
+  await build({ stdin: { contents: `
+    import React from 'react'; import {createRoot} from 'react-dom/client';
+    import {ServicesProvider,useServices} from './src/renderer/services/ServicesContext';
+    window.pending=[]; window.snapshots=[];
+    window.electronAPI={services:{list:()=>new Promise(resolve=>pending.push(resolve))},
+      onServicesChanged: callback=>{window.changed=callback;return()=>{}}};
+    function Probe(){const value=useServices(); snapshots.push(value.services.map(s=>s.id).join(',')); return <output>{value.services.map(s=>s.id).join(',')}</output>}
+    createRoot(document.getElementById('root')).render(<ServicesProvider><Probe/></ServicesProvider>);
+  `, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', outfile: path.join(root, 'fixture.js') });
+  writeText(path.join(root, 'index.html'), '<div id="root"></div><script src="fixture.js"></script>');
+  writeText(path.join(root, 'main.cjs'), `
+    const {app,BrowserWindow}=require('electron'), assert=require('node:assert/strict');
+    app.setPath('userData',${JSON.stringify(path.join(root, 'profile'))}); app.disableHardwareAcceleration();
+    if(process.platform==='darwin')app.setActivationPolicy('prohibited');
+    (async()=>{await app.whenReady();const w=new BrowserWindow({show:false,webPreferences:{backgroundThrottling:false}});
+      await w.loadFile(${JSON.stringify(path.join(root, 'index.html'))});
+      const js=s=>w.webContents.executeJavaScript(s);
+      async function until(s){for(let i=0;i<150;i++){if(await js(s))return;await new Promise(r=>setTimeout(r,10));}throw Error('Timed out: '+s)}
+      await until('window.pending?.length === 1 && !!window.changed');
+      await js('changed(); pending.shift()([{id:"stale-enabled"}]);');
+      await until('pending.length === 1');
+      assert.equal(await js('snapshots.includes("stale-enabled")'),false);
+      await js('pending.shift()([{id:"latest-disabled"}]);');
+      await until('document.querySelector("output").textContent === "latest-disabled"');
+      w.destroy();app.exit(0);
+    })().catch(e=>{console.error(e);app.exit(1)});
+  `);
+  const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
+  const child = spawn(electron, [path.join(root, 'main.cjs')], { env, stdio: ['ignore','pipe','pipe'] });
+  let output = ''; child.stdout.on('data', chunk => output += chunk); child.stderr.on('data', chunk => output += chunk);
+  const timeout = setTimeout(() => child.kill(), 20000);
+  t.after(() => { clearTimeout(timeout); if (child.exitCode === null) child.kill(); });
+  const code = await new Promise((resolve, reject) => { child.on('exit', resolve); child.on('error', reject); });
+  assert.equal(code, 0, output);
+});

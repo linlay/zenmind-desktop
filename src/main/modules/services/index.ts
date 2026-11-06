@@ -22,3 +22,5 @@ export { clearServices, getAllServices, getService, registerService, unregisterS
 export { STARTUP_RESTORE_SERVICE_ORDER } from "./startup-order";
 
 export { stopBrowserWebclient } from "./browser-webclient-runtime";
+
+export { getPreparedEmbeddedNodeRuntime } from "./manager/embedded-node-runtime";

@@ -335,7 +335,7 @@ export async function initializeServiceInternal(
       checkpoints.next("sync-plugin-resources");
       if (service.kind === "plugin" && service.serviceMode === "resource") {
         const desiredStatus = integrationPorts(options.integrationPorts).initializePluginResourceState(app, service);
-        if (desiredStatus === "running") {
+        if (desiredStatus === "running" && !service.resources.agentEngines?.length) {
           await integrationPorts(options.integrationPorts).syncPluginResources(app, service, installDir);
         }
       } else {

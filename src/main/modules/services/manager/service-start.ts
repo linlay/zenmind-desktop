@@ -61,11 +61,11 @@ export async function startServiceInternal(
       integrationPorts: options.integrationPorts
     });
     const result = {
-      ok: true,
-      message: t("service.loaded", { name: service.name }),
+      ok: !nextState.agentEngineSync || nextState.agentEngineSync.syncState === "applied",
+      message: nextState.agentEngineSync ? nextState.message : t("service.loaded", { name: service.name }),
       service: nextState
     } satisfies ServiceCommandResult;
-    if (service.kind === "plugin") {
+    if (service.kind === "plugin" && result.ok) {
       integrationPorts(options.integrationPorts).emitPluginBridgeHook("plugin.started", { pluginId: service.id, service: result.service });
     }
     return result;
@@ -148,6 +148,13 @@ export async function startServiceInternal(
       message: nextState.message,
       service: nextState
     };
+  }
+  const engines = service.id === "agent-platform" ? options.integrationPorts?.agentEngines?.(app) : undefined;
+  if (nextState.status === "running" && engines && !engines.hasAuthority()) {
+    // Desktop restart cannot recover an old process's in-memory management secret.
+    const stopped = await stopService(app, serviceId, options.integrationPorts);
+    if (!stopped.ok) return stopped;
+    nextState = stopped.service;
   }
   let result: ServiceCommandResult;
   if (nextState.status === "running") {
@@ -236,6 +243,10 @@ export async function startServiceInternal(
       integrationPorts: options.integrationPorts
     }
   );
+  if (engines) {
+    if (verifiedResult.ok) await engines.reconcile();
+    else engines.stopped();
+  }
   if (service.kind === "plugin" && verifiedResult.ok) {
     integrationPorts(options.integrationPorts).emitPluginBridgeHook("plugin.started", { pluginId: service.id, service: verifiedResult.service });
   }

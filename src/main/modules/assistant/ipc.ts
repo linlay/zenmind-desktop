@@ -417,19 +417,25 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
         ? projectTypeValue as ProjectCreateType
         : null;
     const workspaceDir = String(input?.workspaceDir || "").trim();
-    const acpBridgeId = String(input?.acpBridgeId || "").trim();
+    if (input && typeof input === "object" && ("acpBridgeId" in input || "bridgeId" in input)) {
+      return { ok: false, message: "acpBridgeId was removed; use engineId" };
+    }
+    const engineId = String(input?.engineId || "").trim();
     if (!projectType) {
       return { ok: false, message: t("assistant.projectTypeUnsupported") };
     }
     if (!workspaceDir) {
       return { ok: false, message: t("assistant.projectWorkspaceMissing") };
     }
-    if (projectType === "acp" && !acpBridgeId) {
-      return { ok: false, message: t("assistant.projectAcpBridgeMissing") };
+    if (projectType === "acp" && !engineId) {
+      return { ok: false, message: t("assistant.projectEngineMissing") };
     }
 
+    if (projectType !== "acp" && engineId) {
+      return { ok: false, message: "engineId requires projectType acp" };
+    }
     const request = buildProjectAgentCreateRequest(projectType, workspaceDir, {
-      acpBridgeId,
+      engineId,
       modelKey: String(input?.modelKey || "").trim(),
       definition: input?.definition
     });

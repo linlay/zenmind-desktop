@@ -18,7 +18,7 @@ import { callAgentPlatform } from "../modules/desktop-actions";
 import { getDesktopDeviceId, getDesktopSsoBusinessToken, issueAgentAccessToken, registerDesktopSsoAvatarProtocolScheme, subscribeDesktopSsoCredentialChange, type DesktopSsoRestoreResult } from "../modules/identity";
 import { configureAgentMarketPlatformCaller, configureConnectorMarketPlatformCaller, configureSkillMarketPlatformCaller } from "../modules/marketplace";
 import { registerDesktopPetAssetProtocolScheme, type DesktopPetRuntime } from "../modules/pet";
-import { createPluginClipboardBridge, type PluginBridgeRuntime } from "../modules/plugins";
+import { createPluginClipboardBridge, getAgentEngineSync, type PluginBridgeRuntime } from "../modules/plugins";
 import { createServicesFacade, createServicesRuntime, type ServicesFacade } from "../modules/services";
 import { type AppShellRuntime, type SelectionExplainWindowController } from "../modules/shell";
 import { createWebsFacade, registerWebappAuth, registerWebsiteFaviconProtocolScheme, type WebsFacade } from "../modules/webs";
@@ -118,6 +118,7 @@ export function createMainProcessRuntime() {
     issueAgentAccessToken(targetApp, reason, (capabilityApp, capabilityId) =>
       servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId));
   const servicesIntegrationPorts = services.assembleServicesIntegration({
+    onEngineChanged: notifyServicesChanged,
     get issueAgentAccessToken() { return identityTokenProvider; },
     get websFacade() { return websFacade; }
   });
@@ -158,13 +159,27 @@ export function createMainProcessRuntime() {
     isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning
   });
   let artifactRuntime: ReturnType<typeof createArtifactRuntime> | undefined;
+  let engineConnection = "";
   const realtimeBroker = new RealtimeBroker({
     app,
     issueAccessToken: identityTokenProvider,
     getDesktopDeviceId,
+    onConnectionState: state => {
+      const connection = `${state.phase}:${state.generation}`;
+      if (connection === engineConnection) return;
+      engineConnection = connection;
+      const engines = getAgentEngineSync(app);
+      if (state.phase === "connected") void engines?.reconcile();
+      else engines?.disconnected();
+    },
     onArtifactPublished: (event) => artifactRuntime?.recordPublished(event),
     onDiagnostic: (message) => console.warn(`[agent-platform-realtime] ${message}`)
   });
+  const unsubscribeEngineDirectory = realtimeBroker.subscribePush({
+    types: ["agent_engines.changed"], kind: "internal", consumerId: "agent-engine-directory",
+    onPush: () => { void getAgentEngineSync(app)?.refreshDirectory(); }
+  });
+  app.once("will-quit", unsubscribeEngineDirectory);
   const pluginClipboardBridge = createPluginClipboardBridge({
     platform: startupPlatform,
     clipboard,

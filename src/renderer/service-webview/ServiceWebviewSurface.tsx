@@ -1171,12 +1171,13 @@ export function ServiceWebviewSurface({
     () => getServiceWebviewAuthProtocol(service?.id),
     [service?.id],
   );
+  // Chat reconnects through the Broker. A backend restart must not destroy its unsent draft.
   const webviewReloadKey = [
     service?.healthMeta.pid ?? "",
-    service?.id === "agent-webclient"
+    service?.id === "agent-webclient" && !isAgentWebclientChatSurface(service.id, surfaceId)
       ? (agentPlatformService?.status ?? "")
       : "",
-    service?.id === "agent-webclient"
+    service?.id === "agent-webclient" && !isAgentWebclientChatSurface(service.id, surfaceId)
       ? (agentPlatformService?.healthMeta.pid ?? "")
       : "",
   ].join(":");

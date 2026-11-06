@@ -64,6 +64,7 @@ export interface ServiceDefinition extends Manifest {
     requests: string[];
   };
   resources: ManifestPluginResources & {
+    agentEngines: NonNullable<ManifestPluginResources["agentEngines"]>;
     webapps: NonNullable<ManifestPluginResources["webapps"]>;
     agents: NonNullable<ManifestPluginResources["agents"]>;
     automations: NonNullable<ManifestPluginResources["automations"]>;

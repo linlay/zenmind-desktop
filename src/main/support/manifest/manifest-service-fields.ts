@@ -57,7 +57,8 @@ export function hasPluginResources(raw: Record<string, unknown>) {
   return (
     Array.isArray(resources.webapps) ||
     Array.isArray(resources.agents) ||
-    Array.isArray(resources.automations)
+    Array.isArray(resources.automations) ||
+    Array.isArray(resources.agentEngines)
   );
 }
 

@@ -39,6 +39,7 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
 
   return {
     pluginApiVersion,
+    ...(raw.requires === undefined ? {} : { requires: structuredClone(raw.requires) as Manifest["requires"] }),
     id,
     name: asOptionalString(raw.name) ?? id,
     kind: isServiceKind(raw.kind) ? raw.kind : (options.defaultKind ?? "plugin"),

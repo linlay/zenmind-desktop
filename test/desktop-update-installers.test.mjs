@@ -104,11 +104,11 @@ test("update startup gate accepts fully started apps and rejects startup/quit", 
   }
 });
 
-test("confirmed upgrade cleans up without waiting for running chats", async () => {
+test("confirmed upgrade refuses active engines before shutdown and retries after both drain", async () => {
   const source = fs.readFileSync(new URL("../src/main/app/lifecycle/app-ready.ts", import.meta.url), "utf8");
   const body = source.match(/prepareInstall: async \(\) => \{([\s\S]*?)\r?\n\s*\},\r?\n\s*quit:/)?.[1];
   assert.ok(body);
-  const prepare = new Function("dependencies", "isStartupPhaseAtLeast", `return (async () => {${body}})();`);
+  const prepare = new Function("dependencies", "isStartupPhaseAtLeast", "getAgentEngineSync", "app", `return (async () => {${body}})();`);
   const events = [];
   const context = {
     appState: { isHandlingQuit: false, startupPhase: "core-ready" },
@@ -120,7 +120,23 @@ test("confirmed upgrade cleans up without waiting for running chats", async () =
     pluginBridgeRuntime: { emitBeforeQuit: () => events.push("plugins") },
     logsRuntime: { flush: async () => events.push("logs") }
   };
-  assert.equal(await prepare(context, () => true), true);
-  assert.deepEqual(events, ["shutdown", "cleanup", "plugins", "logs"]);
+  let active = true;
+  const engines = () => ({ prepareDesktopUpdate: async () => {
+    events.push('drain');
+    if (active) throw new Error('updateBusy');
+    return async () => events.push('resume');
+  } });
+  await assert.rejects(() => prepare(context, () => true, engines, {}), /updateBusy/);
+  assert.deepEqual(events, ['drain']);
+  assert.equal(context.appState.isHandlingQuit, false);
+  active = false; events.length = 0;
+  context.runShutdownCleanup = async () => { events.push('cleanup'); return {ok:false}; };
+  await assert.rejects(() => prepare(context, () => true, engines, {}), /cleanupFailed/);
+  assert.deepEqual(events, ['drain', 'shutdown', 'cleanup', 'resume']);
+  assert.equal(context.appState.isHandlingQuit, false);
+  context.runShutdownCleanup = async () => { events.push('cleanup'); return {ok:true}; };
+  events.length = 0;
+  assert.equal(await prepare(context, () => true, engines, {}), true);
+  assert.deepEqual(events, ["drain", "shutdown", "cleanup", "plugins", "logs"]);
   assert.equal(context.appState.shutdownMode, "installer");
 });

@@ -69,40 +69,41 @@ export function ServicesProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState("");
   const mountedRef = useRef(true);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const refreshVersionRef = useRef(0);
   const servicesSnapshotRef = useRef(createServicesSnapshot([]));
 
   async function refresh() {
-    if (refreshPromiseRef.current) {
-      return refreshPromiseRef.current;
-    }
+    refreshVersionRef.current++;
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
 
     const refreshTask = (async () => {
       try {
-        const next = await window.electronAPI.services.list();
-        if (!mountedRef.current) {
-          return;
-        }
-
-        const nextSnapshot = createServicesSnapshot(next);
-        if (nextSnapshot !== servicesSnapshotRef.current) {
-          servicesSnapshotRef.current = nextSnapshot;
-          setServices(next);
-        }
-
-        setError((current) => (current ? "" : current));
-      } catch (reason) {
-        if (!mountedRef.current) {
-          return;
-        }
-        setError(reason instanceof Error ? reason.message : String(reason));
+        let version: number;
+        do {
+          version = refreshVersionRef.current;
+          try {
+            const next = await window.electronAPI.services.list();
+            if (!mountedRef.current) return;
+            // A notification during the request invalidates this response and
+            // requires one trailing read, even when refresh calls are coalesced.
+            if (version !== refreshVersionRef.current) continue;
+            const nextSnapshot = createServicesSnapshot(next);
+            if (nextSnapshot !== servicesSnapshotRef.current) {
+              servicesSnapshotRef.current = nextSnapshot;
+              setServices(next);
+            }
+            setError(current => current ? "" : current);
+          } catch (reason) {
+            if (!mountedRef.current) return;
+            if (version !== refreshVersionRef.current) continue;
+            setError(reason instanceof Error ? reason.message : String(reason));
+          }
+        } while (version !== refreshVersionRef.current);
       } finally {
         refreshPromiseRef.current = null;
-        if (mountedRef.current) {
-          setLoading(false);
-        }
+        if (mountedRef.current) setLoading(false);
       }
     })();
-
     refreshPromiseRef.current = refreshTask;
     return refreshTask;
   }
@@ -139,6 +140,7 @@ export function ServicesProvider({ children }: PropsWithChildren) {
   }, []);
 
   async function wrapCommand(command: () => Promise<ServiceCommandResult>) {
+    refreshVersionRef.current++;
     const result = await command();
     await refresh();
     return result;

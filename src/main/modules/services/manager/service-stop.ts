@@ -39,7 +39,7 @@ export async function stopService(
         service: current
       };
     }
-    if (current.status !== "running") {
+    if (current.status !== "running" && !current.agentEngineSync) {
       return {
         ok: true,
         message: t("service.notLoaded", { name: service.name }),
@@ -47,12 +47,16 @@ export async function stopService(
       };
     }
     await integrationPorts(ports).stopPluginResources(app, service);
-    const result = {
+    const result: ServiceCommandResult = {
       ok: true,
       message: t("service.stopped", { name: service.name }),
       service: await getServiceState(app, serviceId, { integrationPorts: ports })
-    } satisfies ServiceCommandResult;
-    if (service.kind === "plugin") {
+    };
+    if (result.service.agentEngineSync) {
+      result.ok = result.service.agentEngineSync.syncState === "applied";
+      result.message = result.service.message;
+    }
+    if (service.kind === "plugin" && result.ok) {
       integrationPorts(ports).emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: result.service });
     }
     return result;
@@ -65,6 +69,7 @@ export async function stopService(
     };
   }
   if (current.status !== "running") {
+    if (serviceId === "agent-platform") ports?.agentEngines?.(app).stopped();
     return {
       ok: true,
       message: t("service.currentlyNotRunning", { name: service.name }),
@@ -117,6 +122,7 @@ export async function stopService(
     t("service.stopCommandExecuted", { name: service.name }),
     { integrationPorts: ports }
   );
+  if (serviceId === "agent-platform" && verified.ok) ports?.agentEngines?.(app).stopped();
   if (service.kind === "plugin" && verified.ok) {
     integrationPorts(ports).emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: verified.service });
   }

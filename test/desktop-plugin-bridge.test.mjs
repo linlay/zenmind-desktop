@@ -1099,87 +1099,25 @@ test("desktop pet banner resolves builtin and user pet assets", () => {
   }
 });
 
-test("ACP registration forwards trusted identity and never writes Platform settings", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-bridge-api-"));
-  try {
-    const app = createApp(root);
-    const configPath = path.join(desktopRoot(root), "config/services/agent-platform/configs/coder-settings.yml");
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    const original = "acp-bridges: {}\n";
-    fs.writeFileSync(configPath, original);
-    const calls = [];
-    let notifications = 0;
-    configurePluginBridge({
-      mutateAcpBridge: async (...args) => {
-        calls.push(args);
-        return { changed: calls.length === 1, restartRequired: true };
-      },
-      notifyAgentPlatformConfigChanged: () => { notifications++; }
-    });
-    const input = { sourcePluginId: "forged", bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", authToken: "test-token" };
-    const first = await bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-plugin", input);
-    const retry = await bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-plugin", input);
-    assert.equal(first.restartRequired, true);
-    assert.equal(retry.restartRequired, true);
-    assert.equal(retry.changed, false);
-    assert.equal(notifications, 1);
-    await bridgeInternals.removeAgentPlatformAcpBridge(app, "codex-plugin", { bridgeId: "codex", sourcePluginId: "forged" });
-    assert.deepEqual(calls[0], ["codex-plugin", "upsert", { bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", timeoutMs: 300000, authToken: "test-token" }]);
-    assert.deepEqual(calls[2], ["codex-plugin", "remove", { bridgeId: "codex" }]);
-    configurePluginBridge({ mutateAcpBridge: async () => { throw new Error("Platform unavailable"); } });
-    await assert.rejects(bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-plugin", input), /Platform unavailable/);
-    await assert.rejects(bridgeInternals.removeAgentPlatformAcpBridge(app, "codex-plugin", { bridgeId: "codex" }), /Platform unavailable/);
-    configurePluginBridge({});
-    await assert.rejects(bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-plugin", input), /API is unavailable/);
-    assert.equal(fs.readFileSync(configPath, "utf8"), original);
-    assert.equal(fs.existsSync(path.join(desktopRoot(root), "state/plugins/codex-plugin/plugin-bridge-acp-bridges.json")), false);
-  } finally {
-    configurePluginBridge({});
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("ACP plugins register through the canonical socket request", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zm-acp-register-"));
+test("removed ACP registration methods cannot be called through the plugin socket", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zm-removed-acp-"));
   try {
     const app = createApp(root);
     fs.mkdirSync(path.join(root, "tmp"), { recursive: true });
-    const calls = [];
-    configurePluginBridge({ mutateAcpBridge: async (...args) => { calls.push(args); return { changed: true, restartRequired: true }; } });
+    configurePluginBridge({});
     const service = registerPlugin({
-      pluginApiVersion: 1, id: "codex-acp-bridge", name: "Codex ACP Bridge", version: "v0.1.1",
+      pluginApiVersion: 1, id: "legacy-plugin", name: "Legacy Plugin", version: "v1.0.0",
       lifecycle: { start: ["start.sh", "--daemon"], stop: "stop.sh" },
-      bridge: { requests: ["agentPlatform.upsertAcpBridge"] }
+      bridge: { requests: ["agentPlatform.upsertAcpBridge", "agentPlatform.removeAcpBridge"] }
     });
-    const response = await sendPluginBridgeRequest(app, service, "agentPlatform.upsertAcpBridge", {
-      bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", timeoutMs: 300000, authToken: "test-token"
-    });
-    assert.equal(response.ok, true);
-    assert.equal(response.result.restartRequired, true);
-    assert.equal(response.result.path, undefined);
-    assert.equal(calls[0][0], "codex-acp-bridge");
-    assert.equal(calls[0][2].authToken, "test-token");
+    for (const method of ["agentPlatform.upsertAcpBridge", "agentPlatform.removeAcpBridge"]) {
+      const response = await sendPluginBridgeRequest(app, service, method, { bridgeId: "codex", baseUrl: "http://127.0.0.1:17071" });
+      assert.equal(response.ok, false);
+    }
   } finally {
     stopPluginBridgeServers();
     configurePluginBridge({});
     registryInternals.clearServices();
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
-
-
-test("ACP registration API rejection never falls back to rewriting legacy config", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "acp-legacy-"));
-  try {
-    const app = createApp(root);
-    const configPath = path.join(desktopRoot(root), "config/services/agent-platform/configs/coder-settings.yml");
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    const original = "acp-proxies: {}\n";
-    fs.writeFileSync(configPath, original);
-    configurePluginBridge({ mutateAcpBridge: async () => { throw new Error("acp_configuration_invalid"); } });
-    await assert.rejects(bridgeInternals.upsertAgentPlatformAcpBridge(app, "codex-acp-bridge", {
-      bridgeId: "codex", baseUrl: "http://127.0.0.1:17071", timeoutMs: 300000
-    }), /acp_configuration_invalid/);
-    assert.equal(fs.readFileSync(configPath, "utf8"), original);
-  } finally { configurePluginBridge({}); fs.rmSync(root, { recursive: true, force: true }); }
 });

@@ -102,29 +102,13 @@ test("buildProjectAgentCreateRequest builds a minimal CODER project create reque
   assert.equal(Object.hasOwn(request.definition, "visibility"), false);
 });
 
-test("buildProjectAgentCreateRequest includes ACP only for CODER projects", () => {
-  const request = buildProjectAgentCreateRequest("coder", "/Users/demo/Project/acp-coder", {
-    acpBridgeId: "codex"
-  });
-
-  assert.deepEqual(request, {
-    isProject: true,
-    definition: {
-      mode: "CODER",
-      engine: "acp",
-      runtimeConfig: {
-        workspaceRoot: "/Users/demo/Project/acp-coder",
-        acpBridgeId: "codex"
-      }
-    }
-  });
-  assert.equal(JSON.stringify(request).includes("coderBackend"), false);
+test("native project requests reject the removed ACP bridge option", () => {
+  assert.throws(() => buildProjectAgentCreateRequest("coder", "/project", {acpBridgeId:"codex"}), /removed/);
+  assert.throws(() => buildProjectAgentCreateRequest("coder", "/project", {engineId:"codex/agent"}), /requires projectType acp/);
 });
 
 test("buildProjectAgentCreateRequest builds a minimal KBASE project create request", () => {
-  const request = buildProjectAgentCreateRequest("kbase", "/Users/demo/Knowledge/my-project", {
-    acpBridgeId: "codex"
-  });
+  const request = buildProjectAgentCreateRequest("kbase", "/Users/demo/Knowledge/my-project");
 
   assert.deepEqual(request, {
     isProject: true,
@@ -142,22 +126,8 @@ test("buildProjectAgentCreateRequest builds a minimal KBASE project create reque
   assert.equal(JSON.stringify(request).includes("openai"), false);
 });
 
-test("legacy buildCoderProjectAgentCreateRequest delegates to the minimal CODER request", () => {
-  const request = buildCoderProjectAgentCreateRequest("/Users/demo/Project/agent-coder", {
-    acpBridgeId: "claude"
-  });
-
-  assert.deepEqual(request, {
-    isProject: true,
-    definition: {
-      mode: "CODER",
-      engine: "acp",
-      runtimeConfig: {
-        workspaceRoot: "/Users/demo/Project/agent-coder",
-        acpBridgeId: "claude"
-      }
-    }
-  });
+test("legacy coder builder cannot infer an external engine", () => {
+  assert.throws(() => buildCoderProjectAgentCreateRequest("/project", {acpBridgeId:"claude"}), /removed/);
 });
 
 test("assistant.createProject creates a KBASE project without updating generated defaults", async () => {
@@ -186,15 +156,15 @@ test("assistant.createProject creates a KBASE project without updating generated
   assert.equal(calls.some((call) => call.path === "/api/admin/agents/update"), false);
 });
 
-test("assistant.createProject creates a CODER ACP project with the simplified payload", async () => {
+test("assistant.createProject creates an explicit ACP plugin project with the simplified payload", async () => {
   const { calls, handlers } = registerProjectHandlers();
   const handler = handlers.get("assistant.createProject");
   assert.equal(typeof handler, "function");
 
   const result = await handler(null, {
-    projectType: "coder",
+    projectType: "acp",
     workspaceDir: "/Users/demo/Project/acp-coder",
-    acpBridgeId: "codex"
+    engineId: "codex/agent"
   });
 
   assert.equal(result.ok, true);
@@ -202,11 +172,10 @@ test("assistant.createProject creates a CODER ACP project with the simplified pa
   assert.deepEqual(calls[0].options.body, {
     isProject: true,
     definition: {
-      mode: "CODER",
       engine: "acp",
       runtimeConfig: {
         workspaceRoot: "/Users/demo/Project/acp-coder",
-        acpBridgeId: "codex"
+        engineId: "codex/agent"
       }
     }
   });
@@ -229,13 +198,11 @@ test("assistant.createCoderProject remains a compatibility alias for CODER creat
   try {
     result = await handler(null, {
       name: "ignored-name",
-      workspaceDir: "/Users/demo/Project/legacy-coder",
-      acpBridgeId: "claude"
+      workspaceDir: "/Users/demo/Project/legacy-coder"
     });
     await handler(null, {
       name: "ignored-name",
-      workspaceDir: "/Users/demo/Project/legacy-coder",
-      acpBridgeId: "claude"
+      workspaceDir: "/Users/demo/Project/legacy-coder"
     });
   } finally {
     console.warn = originalWarn;
@@ -247,10 +214,8 @@ test("assistant.createCoderProject remains a compatibility alias for CODER creat
     isProject: true,
     definition: {
       mode: "CODER",
-      engine: "acp",
       runtimeConfig: {
-        workspaceRoot: "/Users/demo/Project/legacy-coder",
-        acpBridgeId: "claude"
+        workspaceRoot: "/Users/demo/Project/legacy-coder"
       }
     }
   });
@@ -450,8 +415,8 @@ test("buildProjectAgentCreateRequest carries client configuration and isolates A
     isProject: true,
     definition: { ...definition, mode: "GENERAL", runtimeConfig: {workspaceRoot: "/project"}, modelConfig: {modelKey: "chosen"} }
   });
-  assert.deepEqual(buildProjectAgentCreateRequest("acp", "/project", { definition, acpBridgeId: "codex", modelKey: "ignored" }), {
+  assert.deepEqual(buildProjectAgentCreateRequest("acp", "/project", { definition, engineId: "codex/agent", modelKey: "ignored" }), {
     isProject: true,
-    definition: {mode: "CODER", engine: "acp", runtimeConfig: {workspaceRoot: "/project", acpBridgeId: "codex"}}
+    definition: {engine: "acp", runtimeConfig: {workspaceRoot: "/project", engineId: "codex/agent"}}
   });
 });

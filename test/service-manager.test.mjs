@@ -624,6 +624,12 @@ function createBuiltinRestoreFixture() {
 function createStartupCoreAssetsFixture(options = {}) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-startup-core-assets-"));
   const assetsRoot = path.join(tempRoot, "assets");
+  const platformHealthGateScript = options.platformHealthGate ? [
+    `    if (!require('node:fs').existsSync(${JSON.stringify(path.join(tempRoot, "platform-health-ready"))})) {`,
+    `      require('node:fs').writeFileSync(${JSON.stringify(path.join(tempRoot, "platform-health-blocked"))}, '503');`,
+    "      res.writeHead(503); res.end('not ready'); return;",
+    "    }"
+  ] : [];
   const isWindows = process.platform === "win32";
   const portBase = 28000 + Math.floor(Math.random() * 2000);
   const ports = {
@@ -838,7 +844,12 @@ function createStartupCoreAssetsFixture(options = {}) {
                       "    res.end('not found');",
                       "  });"
                     ].join("\r\n")
-                  : "  const server = http.createServer((_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ status: 'ok' })); });",
+                  : [
+                      "  const server = http.createServer((_req, res) => {",
+                      ...platformHealthGateScript,
+                      "    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ status: 'ok' }));",
+                      "  });"
+                    ].join("\n"),
                 "  server.on('error', () => {});",
                 "  server.listen(port, '127.0.0.1');",
                 "}",
@@ -1001,7 +1012,12 @@ function createStartupCoreAssetsFixture(options = {}) {
                       "    res.end('not found');",
                       "  });"
                     ].join("\n")
-                  : "  const server = http.createServer((_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ status: 'ok' })); });",
+                  : [
+                      "  const server = http.createServer((_req, res) => {",
+                      ...platformHealthGateScript,
+                      "    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ status: 'ok' }));",
+                      "  });"
+                    ].join("\n"),
                 "  server.on('error', () => {});",
                 "  server.listen(port, '127.0.0.1');",
                 "}",
@@ -6142,86 +6158,6 @@ test("startService starts agent-platform when desktop-managed container hub is u
   }
 });
 
-test("initializeService does not migrate legacy relay settings into the local-cli-acp-relay plugin", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const tempRoot = fixture.tempRoot;
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
-  });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const relayInstallDir = getTestPluginProgramDir(userDataRoot, "local-cli-acp-relay");
-
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  writeTestEnv(
-    userDataRoot,
-    platformService.id,
-    [
-      "SERVER_PORT=11949",
-      "LOCAL_CLI_ACP_RELAY_ENABLED=true",
-      "LOCAL_CLI_ACP_RELAY_PORT=4555",
-      "LOCAL_CLI_ACP_RELAY_AUTH_TOKEN=demo-token",
-      "LOCAL_CLI_ACP_DEFAULT_CWD=/tmp/workspace",
-      "LOCAL_CLI_ACP_ALLOWED_CWD_ROOTS=/tmp/workspace:/tmp/shared",
-      "LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS=30000",
-      "LOCAL_CLI_ACP_RUN_TIMEOUT_MS=900000",
-      "CLAUDE_CODE_ACP_COMMAND=/custom/bin/claude-code-acp",
-      "CLAUDE_CODE_ACP_ARGS=--stdio"
-    ].join("\n"),
-  );
-
-  writePluginInstallRoot(relayInstallDir, {
-    id: "local-cli-acp-relay",
-    name: "Local CLI ACP Relay",
-    port: 3220
-  });
-  fs.writeFileSync(
-    path.join(relayInstallDir, ".env.example"),
-    [
-      "PORT=3220",
-      "AUTH_TOKEN=",
-      "NODE_BIN=",
-      "CLAUDE_CODE_ACP_COMMAND=",
-      "CLAUDE_CODE_ACP_ARGS=",
-      "DEFAULT_CWD=~/Desktop",
-      "ALLOWED_CWD_ROOTS=~/Desktop",
-      "HANDSHAKE_TIMEOUT_MS=60000",
-      "RUN_TIMEOUT_MS=600000"
-    ].join("\n") + "\n",
-    "utf8"
-  );
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    const result = await initializeService(app, "local-cli-acp-relay");
-    assert.equal(result.ok, true, result.message);
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-  }
-
-  const relayEnvContent = fs.readFileSync(getTestEnvPath(userDataRoot, "local-cli-acp-relay", "plugins"), "utf8");
-  assert.match(relayEnvContent, /^PORT=3220$/m);
-  assert.match(relayEnvContent, /^AUTH_TOKEN=$/m);
-  assert.doesNotMatch(relayEnvContent, /^DEFAULT_CWD=\/tmp\/workspace$/m);
-  assert.doesNotMatch(relayEnvContent, /^ALLOWED_CWD_ROOTS=\/tmp\/workspace:\/tmp\/shared$/m);
-  assert.match(relayEnvContent, /^HANDSHAKE_TIMEOUT_MS=60000$/m);
-  assert.match(relayEnvContent, /^RUN_TIMEOUT_MS=600000$/m);
-  assert.doesNotMatch(relayEnvContent, /^CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp$/m);
-  assert.doesNotMatch(relayEnvContent, /^CLAUDE_CODE_ACP_ARGS=--stdio$/m);
-  assert.match(relayEnvContent, /^NODE_BIN=$/m);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
 test("ensurePreStartRequirements preserves a custom provider api key env part", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const tempRoot = fixture.tempRoot;
@@ -6258,60 +6194,6 @@ test("ensurePreStartRequirements preserves a custom provider api key env part", 
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=custom-key-part$/m);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("ensurePreStartRequirements does not fill default env for the local-cli-acp-relay plugin", async () => {
-  const fixture = createStartupCoreAssetsFixture();
-  const tempRoot = fixture.tempRoot;
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
-  });
-  const relayInstallDir = getTestPluginProgramDir(userDataRoot, "local-cli-acp-relay");
-  const originalRelayEnv = [
-    "PORT=3220",
-    "AUTH_TOKEN=",
-    "NODE_BIN=",
-    "CLAUDE_CODE_ACP_COMMAND=",
-    "CLAUDE_CODE_ACP_ARGS=",
-    "DEFAULT_CWD=",
-    "ALLOWED_CWD_ROOTS=",
-    "HANDSHAKE_TIMEOUT_MS=",
-    "RUN_TIMEOUT_MS="
-  ].join("\n") + "\n";
-
-  writePluginInstallRoot(relayInstallDir, {
-    id: "local-cli-acp-relay",
-    name: "Local CLI ACP Relay",
-    port: 3220,
-    deployScriptContent: false
-  });
-  writeTestEnv(
-    userDataRoot,
-    "local-cli-acp-relay",
-    originalRelayEnv,
-    "plugins"
-  );
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    await __testInternals.ensurePreStartRequirements(app, getService("local-cli-acp-relay"));
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-  }
-
-  const relayEnvContent = fs.readFileSync(getTestEnvPath(userDataRoot, "local-cli-acp-relay", "plugins"), "utf8");
-  assert.equal(relayEnvContent, originalRelayEnv);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -6386,96 +6268,6 @@ test("startService hosts agent-webclient without executing bundle start script",
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("startService injects local-cli-acp-relay NODE_BIN without persisting it to env", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-relay-node-bin-start-env-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const installDir = getTestPluginProgramDir(userDataRoot, "local-cli-acp-relay");
-  const app = createApp(userDataRoot);
-  const expectedNodeBin = __testInternals.resolveNodeBin();
-  const expectedNodeBinLiteral = expectedNodeBin.includes(" ") ? `"${expectedNodeBin}"` : expectedNodeBin;
-  const relayPidPath = getTestPidPath(userDataRoot, "local-cli-acp-relay", "test-plugin.pid", "plugins");
-
-  registryInternals.clearServices();
-  try {
-    writePluginInstallRoot(installDir, {
-      id: "local-cli-acp-relay",
-      name: "Local CLI ACP Relay",
-      port: 3220
-    });
-    fs.writeFileSync(
-      path.join(installDir, ".env.example"),
-      [
-        "PORT=3220",
-        "AUTH_TOKEN=",
-        "NODE_BIN=",
-        "CLAUDE_CODE_ACP_COMMAND=",
-        "CLAUDE_CODE_ACP_ARGS=",
-        "DEFAULT_CWD=~/Desktop",
-        "ALLOWED_CWD_ROOTS=~/Desktop",
-        "HANDSHAKE_TIMEOUT_MS=60000",
-        "RUN_TIMEOUT_MS=600000"
-      ].join("\n") + "\n",
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(installDir, "start.sh"),
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "mkdir -p run",
-        `pid_file="${relayPidPath}"`,
-        'pid_dir="$(dirname "$pid_file")"',
-        'mkdir -p "$pid_dir"',
-        ': "${NODE_BIN:?missing NODE_BIN}"',
-        'printf "%s" "$NODE_BIN" > run/node-bin.txt',
-        'fixture_script="$PWD/run/local-cli-acp-relay-fixture.mjs"',
-        'printf "setInterval(() => {}, 1000);\\n" > "$fixture_script"',
-        '"$NODE_BIN" "$fixture_script" >/dev/null 2>&1 &',
-        'echo $! > "$pid_file"',
-        "printf started > run/started.txt"
-      ].join("\n") + "\n",
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(installDir, "stop.sh"),
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        `pid_file="${relayPidPath}"`,
-        'if [ -f "$pid_file" ]; then',
-        '  kill "$(cat "$pid_file")" >/dev/null 2>&1 || true',
-        '  rm -f "$pid_file"',
-        "fi"
-      ].join("\n") + "\n",
-      "utf8"
-    );
-    fs.chmodSync(path.join(installDir, "start.sh"), 0o755);
-    fs.chmodSync(path.join(installDir, "stop.sh"), 0o755);
-
-    const initResult = await initializeService(app, "local-cli-acp-relay");
-    assert.equal(initResult.ok, true, initResult.message);
-
-    const startResult = await startService(app, "local-cli-acp-relay");
-    assert.equal(startResult.ok, true, startResult.message);
-    assert.equal(fs.readFileSync(path.join(installDir, "run", "node-bin.txt"), "utf8"), expectedNodeBin);
-
-    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "local-cli-acp-relay", "plugins"), "utf8");
-    assert.doesNotMatch(
-      envContent,
-      new RegExp(`^NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m")
-    );
-    assert.match(envContent, /^NODE_BIN=$/m);
-  } finally {
-    try {
-      await stopService(app, "local-cli-acp-relay");
-    } catch {
-      // Ignore cleanup failures for synthetic fixtures.
-    }
-    registryInternals.clearServices();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
@@ -6885,7 +6677,7 @@ test("restoreRunningServices skips install-only container hub and restores other
       writeExecutableFile(
         path.join(pluginFolder, "start.ps1"),
         [
-          "$pidDir = Join-Path $PSScriptRoot 'run'",
+          "$pidDir = $env:SERVICE_STATE_DIR",
           "New-Item -ItemType Directory -Path $pidDir -Force | Out-Null",
           "$runDir = Join-Path $PSScriptRoot 'run'",
           "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
@@ -6902,7 +6694,7 @@ test("restoreRunningServices skips install-only container hub and restores other
         [
           "#!/usr/bin/env bash",
           "set -euo pipefail",
-          'pid_dir="$PWD/run"',
+          'pid_dir="$SERVICE_STATE_DIR"',
           'mkdir -p "$pid_dir"',
           'mkdir -p run',
           'fixture_script="$PWD/run/restored-plugin-fixture.mjs"',
@@ -6924,6 +6716,11 @@ test("restoreRunningServices skips install-only container hub and restores other
       }
     });
 
+    const restoredState = await getServiceState(app, "restored-plugin");
+    assert.equal(restoredState.status, "running");
+    assert.equal(restoredState.healthMeta.pidFilePath, getTestPidPath(userDataRoot, "restored-plugin", "test-plugin.pid", "plugins"));
+    assert.ok(isPidRunning(restoredState.healthMeta.pid));
+    assert.equal(fs.existsSync(path.join(pluginFolder, "run", "test-plugin.pid")), false);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.restored, ["restored-plugin"]);
     assert.deepEqual(startupEvents, [
@@ -7475,18 +7272,21 @@ test("runStartupPreparation restores second-launch core services in parallel", a
 });
 
 test("runStartupPreparation prepares packaged first-launch core services in parallel and gates webclient verification", async () => {
-  const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500, deployDelayMs: 300 });
+  const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500, deployDelayMs: 300, platformHealthGate: true });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
   const installingTimes = new Map();
   const startingTimes = new Map();
   const succeededTimes = new Map();
+  const readyPath = path.join(fixture.tempRoot, "platform-health-ready");
+  let webclientSucceededBeforeHealth = false;
+  let startup;
 
   process.env.SERVICE_VERIFY_DELAY_MS = "0";
 
   try {
-    const result = await runStartupPreparation(app, {
+    startup = runStartupPreparation(app, {
       onStarting(serviceId) {
         if (["identity-center", "agent-platform", "agent-webclient"].includes(serviceId)) {
           startingTimes.set(serviceId, Date.now());
@@ -7499,10 +7299,20 @@ test("runStartupPreparation prepares packaged first-launch core services in para
           }
           if (phase === "succeeded") {
             succeededTimes.set(serviceId, Date.now());
+            if (serviceId === "agent-webclient" && !fs.existsSync(readyPath)) webclientSucceededBeforeHealth = true;
           }
         }
       }
     });
+    const deadline = Date.now() + 15000;
+    while (!fs.existsSync(path.join(fixture.tempRoot, "platform-health-blocked")) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(fs.existsSync(path.join(fixture.tempRoot, "platform-health-blocked")), true, "Platform health must be probed while unavailable");
+    assert.equal(succeededTimes.has("agent-webclient"), false, "WebClient must not succeed while Platform returns 503");
+    fs.writeFileSync(readyPath, "ready");
+    const result = await startup;
+    assert.equal(webclientSucceededBeforeHealth, false);
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.preparedChanged, true);
     const installTimes = ["identity-center", "agent-platform", "agent-webclient"].map((serviceId) => {
@@ -7519,11 +7329,11 @@ test("runStartupPreparation prepares packaged first-launch core services in para
       assert.equal(succeededTimes.has(serviceId), true, `${serviceId} should reach succeeded phase`);
     }
 
-    assert.ok(
-      succeededTimes.get("agent-webclient") >= succeededTimes.get("agent-platform"),
-      "agent-webclient should only succeed after agent-platform satisfies verifyRunning requirements"
-    );
+    assert.equal((await getServiceState(app, "agent-webclient")).status, "running");
   } finally {
+    // Release the fixture health gate even if an assertion fails, then join startup before cleanup.
+    fs.writeFileSync(readyPath, "ready");
+    await startup?.catch(() => {});
     if (previousVerifyDelay === undefined) {
       delete process.env.SERVICE_VERIFY_DELAY_MS;
     } else {
@@ -8210,5 +8020,43 @@ test("runtime reinstall replaces healthy core programs and keeps optional progra
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('managed Platform reacquires engine authority after Desktop reconstruction and reuses it on later starts', async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, 'user-data');
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
+  let authority = false, launches = 0, snapshots = 0;
+  const ports = { ...servicesIntegrationPorts, agentEngines: () => ({
+    hasAuthority: () => authority,
+    stopped: () => { authority = false; },
+    reconcile: async () => { snapshots++; },
+    prepareLaunch: async () => { launches++; authority = true; return { args: [], complete: ok => { if (!ok) authority = false; } }; }
+  }) };
+  try {
+    const initial = await runStartupPreparation(app);
+    assert.deepEqual(initial.failures, []);
+    const previous = (await getServiceState(app, 'agent-platform')).healthMeta.pid;
+    const started = await rawServiceManager.startService(app, 'agent-platform', ports);
+    assert.equal(started.ok, true, started.message);
+    assert.equal(launches, 1, 'a running process without this Desktop authority must be restarted once');
+    assert.notEqual(started.service.healthMeta.pid, previous);
+    const reused = await rawServiceManager.startService(app, 'agent-platform', ports);
+    assert.equal(reused.ok, true, reused.message);
+    assert.equal(launches, 1, 'normal reconciliation does not restart Platform');
+    assert.equal(reused.service.healthMeta.pid, started.service.healthMeta.pid);
+    assert.equal(snapshots, 2);
+  } finally {
+    await __testInternals.waitForBackgroundStartupPreparations();
+    await stopStartupCoreProcesses(app);
+    restore(); fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+
+test("ordinary plugins receive no implicit Node launch override", () => {
+  for (const id of ["third-party-engine", "local-cli-acp-relay"]) {
+    assert.equal(__testInternals.getStartCommandEnvOverrides({}, {id}), undefined);
   }
 });

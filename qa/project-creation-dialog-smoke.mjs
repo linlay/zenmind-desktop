@@ -15,8 +15,9 @@ import {createTranslator} from './src/shared/i18n';
 import './src/renderer/styles/theme.css';import './src/renderer/styles/navigation.css';
 const root=createRoot(document.getElementById('root')),t=createTranslator('zh-CN');
 window.clock=Date.now();Date.now=()=>window.clock;window.calls=0;window.requests=[];
-window.electronAPI={services:{list:async()=>[]},assistant:{getProjectCreationOptions:()=>{window.calls++;return new Promise(resolve=>window.requests.push(resolve))}}};
+window.electronAPI={services:{list:async()=>[]},assistant:{onNavigationPushEvent:listener=>{window.push=listener;return ()=>{}},getProjectCreationOptions:()=>{window.calls++;return new Promise(resolve=>window.requests.push(resolve))}}};
 window.options={types:[{key:'general',label:'通用型',mode:'GENERAL',engine:'native',available:true,workspaceRequired:true,modelRequired:true,defaultModelKey:'model-a',defaultModelAvailable:true,supportsGroups:true,baseTools:[],defaultGroups:[]}],groups:[],models:[{key:'model-a',name:'模型 A'},{key:'model-b',name:'模型 B'}]};
+window.options.types.push({key:'acp',label:'外部引擎',engine:'acp',available:true,workspaceRequired:true,modelRequired:false,supportsGroups:false,defaultGroups:[],baseTools:[],engineDirectory:{ready:true,revision:1,engines:[{engineId:'codex/agent',enabled:true,syncState:'applied',dependencyState:'ready',authState:'unknown',runtimeState:'stopped'}]}});
 window.openDialog=()=>root.render(<CreateProjectDialog workspaceDir="/fixture" t={t} onClose={()=>root.render(null)} onCreated={()=>{}}/>);
 window.closeDialog=()=>root.render(null);
 window.warmOptions=()=>projectCreationOptionsCache('zh-CN').load();
@@ -37,6 +38,15 @@ await js('window.closeDialog()');await pause();await js('window.clock+=30001;win
 assert.equal(await js('!!document.querySelector("[role=radiogroup]")'),true,'refresh error hid the form');assert.equal(await js('document.querySelector("button[type=submit]").disabled'),true);
 await js('document.querySelector(".sidebar-project-dialog-status button").click()');await pause();await js('window.requests.shift()({ok:true,message:"",options:window.options})');await pause();assert.equal(await js('document.querySelector("button[type=submit]").disabled'),false);
 await js('window.closeDialog()');await pause();await js('window.electronAPI.assistant={...window.electronAPI.assistant};void window.warmOptions()');await pause();await js('window.requests.shift()({ok:true,message:"",options:window.options})');await pause();const warmedCalls=await js('window.calls');await js('window.openDialog()');await pause();assert.equal(await js('!!document.querySelector("[role=radiogroup]")'),true,'preloaded first open showed loading');assert.equal(await js('window.calls'),warmedCalls);
-console.log('PASS cold load, immediate reopen, preloaded first open, stale refresh, preserved selection and failure retry');app.quit()}).catch(e=>{console.error(e);app.exit(1)});`);
+await js('document.querySelector("input[value=acp]").click()');await pause();
+assert.equal(await js('document.querySelector("select").value'),'codex/agent');
+assert.equal(await js('document.body.textContent.includes("认证状态未知")'),true);
+await js('window.push({type:"agent_engines.changed"})');await pause();
+assert.equal(await js('document.querySelector("button[type=submit]").disabled'),true);
+await js('window.options.types[1].engineDirectory.engines=[];window.requests.shift()({ok:true,message:"",options:window.options})');await pause();
+assert.equal(await js('document.querySelector("select").value'),'codex/agent','removed selection silently switched');
+assert.equal(await js('document.body.textContent.includes("所选引擎已不可用")'),true);
+assert.equal(await js('document.querySelector("button[type=submit]").disabled'),true);
+console.log('PASS cold load, immediate reopen, preloaded first open, stale refresh, preserved selection, failure retry and revoked ACP engine');app.quit()}).catch(e=>{console.error(e);app.exit(1)});`);
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'project-creation-'));
 try{await new Promise((resolve,reject)=>{const child=spawn(require('electron'),[path.join(output,'runner.cjs')],{stdio:'inherit',env:{...process.env,ELECTRON_RUN_AS_NODE:'',PROJECT_CREATION_SMOKE_PROFILE:profile}});child.once('error',reject);child.once('exit',code=>code===0?resolve():reject(new Error('Electron exited '+code)));});}finally{fs.rmSync(profile,{recursive:true,force:true});}

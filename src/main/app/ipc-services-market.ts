@@ -1,12 +1,13 @@
 import { createSkinMarketPort } from "../modules/settings";
 import type { MarketListResult } from "../../shared/contracts";
-import { getDesktopSsoBusinessToken, isDesktopSsoCredentialRuntimeReady } from "../modules/identity";
-import { loadBuiltinServices } from "../modules/services";
+import { getDesktopDeviceId, getDesktopSsoBusinessToken, isDesktopSsoCredentialRuntimeReady } from "../modules/identity";
+import { getPreparedEmbeddedNodeRuntime, loadBuiltinServices } from "../modules/services";
 import { importEnvZipIntoExistingRuntime } from "../modules/services";
 import {
   emitPluginBridgeHook,
   getPluginGlobalShortcutStatuses,
   createPluginLifecycle,
+  getAgentEngineSync,
   invokePluginDesktopAction,
   loadInstalledPlugins
 } from "../modules/plugins";
@@ -54,7 +55,11 @@ export function registerServiceMarketIpc(options: MainIpcRegistrationOptions) {
     petRuntime
   } = options;
   const services = options.servicesFacade;
-  const plugins = createPluginLifecycle(services, options.websFacade.webappManager);
+  const plugins = createPluginLifecycle(services, options.websFacade.webappManager, {
+    getHostId: getDesktopDeviceId,
+    prepareNodeRuntime: getPreparedEmbeddedNodeRuntime,
+    revoke: async (targetApp, pluginId) => getAgentEngineSync(targetApp)?.revoke(pluginId) ?? { ok: false, message: "engine_sync_unavailable" }
+  });
   const { assistantBridge } = assistantBridgeRuntime;
   const withMarketplacePorts = (marketOptions: Record<string, unknown> = {}) => ({
     ...marketOptions,

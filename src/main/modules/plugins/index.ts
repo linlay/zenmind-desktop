@@ -10,3 +10,5 @@ export type { PluginLifecycle } from "./lifecycle";
 export type { PluginBridgeRuntime } from "./runtime";
 export { getPluginSettingsEnv, openPluginSettingsPage, readPluginSettingsSnapshot, writePluginSettingsValues } from "./settings";
 export { handlePluginUninstall } from "./uninstall";
+
+export { createAgentEngineSync, getAgentEngineSync } from "./engine-resources";

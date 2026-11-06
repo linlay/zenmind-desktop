@@ -3,8 +3,6 @@ import { type ServiceDefinition } from "../../../support/manifest/manifest-utils
 import { getServiceLayout } from "./layout";
 import { type ServicesIntegrationPorts } from "../integration-ports";
 import { getServiceState } from "./service-state";
-import { PROCESS_EXEC_PATH_PLACEHOLDER } from "./env-normalization";
-import { NODE_BIN_START_ENV_SERVICE_IDS } from "./command-environment";
 import { type ServiceId } from "../../../../shared/contracts";
 import { getService } from "../service-registry";
 
@@ -69,13 +67,6 @@ export async function applyEnvBindings(
     }
 
     if (binding.value !== undefined) {
-      if (
-        bindingKey === "NODE_BIN" &&
-        binding.value.trim() === PROCESS_EXEC_PATH_PLACEHOLDER &&
-        NODE_BIN_START_ENV_SERVICE_IDS.has(service.id)
-      ) {
-        continue;
-      }
       const resolved = resolveEnvBindingLiteralValue(app, service, binding.value);
       updates.set(bindingKey, resolved);
     }

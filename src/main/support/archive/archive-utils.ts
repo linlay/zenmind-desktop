@@ -147,7 +147,7 @@ export async function inspectZipArchiveSafety(
       _data?: { compressedSize?: number; uncompressedSize?: number };
     })._data;
     return {
-      name: entry.name,
+      name: (entry as unknown as { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name,
       dir: entry.dir,
       unixPermissions: typeof entry.unixPermissions === "number" ? entry.unixPermissions : undefined,
       compressedSize: Number(data?.compressedSize ?? 0),

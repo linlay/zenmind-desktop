@@ -20,7 +20,7 @@ import {
 } from "../../modules/desktop-actions";
 import { createDesktopSsoController, issueAgentAccessToken, registerDesktopSsoAvatarProtocol, type DesktopSsoRestoreResult } from "../../modules/identity";
 import { registerDesktopPetAssetProtocol } from "../../modules/pet";
-import { configurePluginResources, type PluginBridgeRuntime } from "../../modules/plugins";
+import { configurePluginResources, getAgentEngineSync, type PluginBridgeRuntime } from "../../modules/plugins";
 import { type AppShellRuntime } from "../../modules/shell";
 import { registerDesktopUpdates } from "../../modules/updates";
 import {
@@ -133,15 +133,25 @@ export async function handleAppReady(dependencies: HandleAppReadyDependencies) {
       getMainWindow: dependencies.getMainWindow,
       prepareInstall: async () => {
         if (dependencies.appState.isHandlingQuit || !isStartupPhaseAtLeast(dependencies.appState.startupPhase, "core-ready")) throw new Error("updateBusy");
+        const engines = getAgentEngineSync(app);
+        if (!engines) throw new Error("updateBusy");
+        const resumeEngines = await engines.prepareDesktopUpdate();
+        if (dependencies.appState.isHandlingQuit) {
+          await resumeEngines();
+          throw new Error("updateBusy");
+        }
         dependencies.appState.isHandlingQuit = true;
         dependencies.realtimeBroker.beginShutdown();
         dependencies.appState.shutdownMode = "installer";
-        const report = await dependencies.runShutdownCleanup();
-        if (!report.ok) {
+        try {
+          const report = await dependencies.runShutdownCleanup();
+          if (!report.ok) throw new Error("cleanupFailed");
+        } catch {
           dependencies.appState.isHandlingQuit = false;
           dependencies.appState.shutdownCleanupPromise = null;
           dependencies.appState.shutdownCleanupComplete = false;
           dependencies.appState.shutdownReport = null;
+          await resumeEngines();
           throw new Error("cleanupFailed");
         }
         dependencies.pluginBridgeRuntime.emitBeforeQuit();

@@ -19,14 +19,15 @@ export type ProjectCreationSelection = {
   groupsTouched: boolean;
   /** Model picked by hand; empty means "use the type's default". */
   modelKey: string;
-  acpBridgeId: string;
+  engineId: string;
 };
 
 export type ProjectCreationProblem =
   | "typeUnavailable"
   | "directoryRequired"
   | "modelRequired"
-  | "acpBridgeRequired";
+  | "engineRequired"
+  | "engineUnavailable";
 
 export function findProjectCreationType(
   options: AssistantProjectCreationOptions,
@@ -65,7 +66,7 @@ export function initialProjectCreationSelection(
     groups: defaultGroups(options, typeKey),
     groupsTouched: false,
     modelKey: "",
-    acpBridgeId: type?.acpBridges?.[0]?.id ?? "",
+    engineId: type?.engineDirectory?.engines.find(engine => engine.enabled && engine.syncState === "applied" && engine.dependencyState === "ready")?.engineId ?? "",
   };
 }
 
@@ -76,16 +77,14 @@ export function changeProjectCreationType(
   typeKey: AssistantCreateProjectType,
 ): ProjectCreationSelection {
   const type = findProjectCreationType(options, typeKey);
-  const bridges = type?.acpBridges ?? [];
+  const engines = type?.engineDirectory?.engines ?? [];
   return {
     ...selection,
     typeKey,
     groups: defaultGroups(options, typeKey),
     groupsTouched: false,
     modelKey: "",
-    acpBridgeId: bridges.some((bridge) => bridge.id === selection.acpBridgeId)
-      ? selection.acpBridgeId
-      : bridges[0]?.id ?? "",
+    engineId: selection.engineId || engines.find(engine => engine.enabled && engine.syncState === "applied" && engine.dependencyState === "ready")?.engineId || "",
   };
 }
 
@@ -137,9 +136,10 @@ export function projectCreationProblem(
   if (!workspaceDir.trim()) {
     return "directoryRequired";
   }
-  if (type.key === "acp" && !selection.acpBridgeId) {
-    return "acpBridgeRequired";
+  if (type.key === "acp" && !selection.engineId) {
+    return "engineRequired";
   }
+  if (type.key === "acp" && (!type.engineDirectory?.ready || !type.engineDirectory.engines.some(engine => engine.engineId === selection.engineId && engine.enabled && engine.syncState === "applied" && engine.dependencyState === "ready"))) return "engineUnavailable";
   if (type.modelRequired && !resolveProjectCreationModel(options, selection)) {
     return "modelRequired";
   }
@@ -158,7 +158,7 @@ export function buildProjectCreationRequest(
     definition: selectedCreationDefinition(options, selection.typeKey, selection.groups),
   };
   if (selection.typeKey === "acp") {
-    request.acpBridgeId = selection.acpBridgeId;
+    request.engineId = selection.engineId;
     return request;
   }
   // Only a model that differs from the type default is sent; otherwise Agent
@@ -168,4 +168,16 @@ export function buildProjectCreationRequest(
     request.modelKey = modelKey;
   }
   return request;
+}
+
+/** Directory states are observations from Platform; unknown authentication is not a failure. */
+export function projectEngineStatus(engine: {enabled: boolean; syncState: string; dependencyState: string; runtimeState: string; authState: string}) {
+  if (!engine.enabled) return "disabled";
+  if (engine.syncState !== "applied") return "syncPending";
+  if (engine.dependencyState === "missing") return "dependencyMissing";
+  if (engine.dependencyState !== "ready") return "dependencyUnknown";
+  if (engine.runtimeState === "failed" || engine.authState === "error") return "runtimeError";
+  if (engine.authState === "required") return "authRequired";
+  if (engine.authState === "authenticating") return "authPending";
+  return engine.authState === "authenticated" ? "ready" : "authUnknown";
 }

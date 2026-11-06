@@ -102,7 +102,11 @@ export async function installPluginMarketItem(
     if (!options.plugins) {
       throw new Error("Plugin lifecycle must be supplied by the application composition root.");
     }
-    const result = await options.plugins.installFromArchive(app, archivePath);
+    const engineSource = manifest.resources?.agentEngines?.length ? {
+      kind: "market" as const, authorizationRef: `catalog:${options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL}#${item.id}@${item.version}`,
+      archiveDigest: `sha256:${resolved.asset.sha256?.toLowerCase() ?? ""}`, pluginId: item.id, pluginVersion: item.version
+    } : undefined;
+    const result = await options.plugins.installFromArchive(app, archivePath, engineSource);
     const installPath = getPluginInstallDir(app, item.id);
     if (result.ok) {
       upsertInstalledRecord(app, {

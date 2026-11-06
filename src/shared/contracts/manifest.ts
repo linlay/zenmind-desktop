@@ -255,7 +255,44 @@ export interface ManifestPluginAutomationResource {
   query: Record<string, unknown>;
 }
 
+export interface EngineDependency {
+  /** Bundled package directory and optional executable, relative to the plugin root. */
+  path?: string;
+  entry?: string;
+  id: string;
+  version: string;
+  delivery: "host-managed" | "bundled";
+}
+export interface EngineLaunch {
+  runtime: "node" | "executable";
+  entry: string;
+  args: string[];
+}
+export interface AdapterVersion {
+  package: string;
+  version: string;
+  acpSdkVersion: string;
+}
+export interface EngineResource {
+  id: string;
+  name: string;
+  protocol: "acp";
+  transport: "stdio";
+  launch: EngineLaunch;
+  adapter?: AdapterVersion;
+  dependencies: EngineDependency[];
+  authentication?: {
+    terminalMethods: TerminalAuthLaunch[];
+    agentMethods?: string[];
+  };
+}
+export interface TerminalAuthLaunch {
+  methodId: string;
+  args: string[];
+}
+
 export interface ManifestPluginResources {
+  agentEngines?: EngineResource[];
   webapps?: ManifestPluginWebappResource[];
   agents?: ManifestPluginAgentResource[];
   automations?: ManifestPluginAutomationResource[];
@@ -263,6 +300,10 @@ export interface ManifestPluginResources {
 
 export interface Manifest {
   pluginApiVersion?: number;
+  requires?: {
+    platformAgentEngineApi: 2;
+    webclientAgentEngineApi: 1;
+  };
   id: string;
   name: string;
   version: string;

@@ -4871,7 +4871,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /source: "desktop-nav"/);
   assert.match(contracts, /recentFrames: AssistantNavigationLiveFrame\[\];/);
   assert.match(contracts, /interface AssistantCreateProjectRequest/);
-  assert.match(contracts, /type AssistantCreateProjectType = "coder" \| "kbase"/);
+  assert.match(contracts, /type AssistantCreateProjectType = "general" \| "coder" \| "kbase" \| "acp"/);
   assert.match(contracts, /interface AssistantCreateProjectResult/);
   assert.match(contracts, /interface AssistantReorderProjectsRequest[\s\S]*?agentKeys: string\[\]/);
   assert.match(contracts, /interface AssistantReorderProjectsResult[\s\S]*?updatedAt\?: EpochMilliseconds/);
@@ -4998,7 +4998,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appSidebar, /sidebar\.project\.kbaseNotImplemented/);
   assert.doesNotMatch(appSidebar, /if \(dialog\.projectType === "kbase"\)/);
   assert.match(projectCreation, /projectType:\s*selection\.typeKey/);
-  assert.match(projectCreation, /request\.acpBridgeId = selection\.acpBridgeId/);
+  assert.match(projectCreation, /request\.engineId = selection\.engineId/);
   assert.doesNotMatch(assistantHandlers, /\/api\/admin\/agents\/update/);
   assert.doesNotMatch(assistantHandlers, /definition:\s*updateDefinition/);
   assert.doesNotMatch(appSidebar, /没有检测到正在运行的 ACP 工具/);

@@ -69,3 +69,28 @@ test('caches are isolated by API context and language', async () => {
   assert.equal(projectCreationOptionsCache('zh-CN', api), zh);
   assert.equal(projectCreationOptionsCache('zh-CN', { ...api }).peek(), null);
 });
+
+test('directory invalidation replaces an in-flight load and ignores its stale result', async () => {
+ const finish=[];
+ const cache=createProjectCreationOptionsCache(()=>new Promise(resolve=>finish.push(resolve)));
+ const old=cache.load();await Promise.resolve();cache.invalidate();
+ const fresh=cache.load();await Promise.resolve();
+ const next=success();finish[1](next);await fresh;
+ finish[0](success());await old;
+ assert.equal(cache.peek(),next.options);
+});
+
+test('directory pushes invalidate the shared cache and notify the open form', async () => {
+ let push, invalidations=0;
+ const cache=projectCreationOptionsCache('en-US', {
+  getProjectCreationOptions:async()=>success(),
+  onNavigationPushEvent:listener=>{push=listener; return ()=>{};},
+ });
+ await cache.load();
+ const stop=cache.subscribe(()=>invalidations++);
+ push({type:'agent_engines.changed'});
+ assert.equal(cache.peek(),null);
+ assert.equal(invalidations,1);
+ stop();push({type:'agent_engines.changed'});
+ assert.equal(invalidations,1);
+});

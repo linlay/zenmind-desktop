@@ -1,3 +1,4 @@
+import type { EngineDirectory } from "./agent-engine";
 import type { DesktopCopilotPagePreferences, DesktopCopilotPagePreferencesInput } from "../assistant-settings";
 import type { AssistantAttachment } from "./attachments";
 import type { EpochMilliseconds } from "../time-contract";
@@ -403,7 +404,7 @@ export type AssistantCreateProjectType = "general" | "coder" | "kbase" | "acp";
 export interface AssistantCreateProjectRequest {
   projectType: AssistantCreateProjectType;
   workspaceDir: string;
-  acpBridgeId?: string;
+  engineId?: string;
   /** Overrides the type's default model; ignored for the external engine. */
   modelKey?: string;
   /** Concrete configuration assembled by the client. */
@@ -427,7 +428,8 @@ export interface AssistantProjectCreationType {
   groupsUnsupportedReason?: string;
   baseTools: string[];
   defaultGroups: string[];
-  acpBridges?: Array<{ id: string }>;
+  engineDirectory?: EngineDirectory;
+  unavailableCode?: string;
 }
 
 export interface AssistantProjectCreationMember {
@@ -467,7 +469,7 @@ export interface AssistantProjectCreationOptionsResult {
 export interface AssistantCreateCoderProjectRequest {
   name?: string;
   workspaceDir: string;
-  acpBridgeId?: string;
+  engineId?: string;
 }
 
 export interface AssistantCreateProjectResult {

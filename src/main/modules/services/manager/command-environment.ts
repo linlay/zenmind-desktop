@@ -1,6 +1,3 @@
-import { type ServiceId } from "../../../../shared/contracts";
-import { LOCAL_CLI_ACP_RELAY_PLUGIN_ID } from "./env-normalization";
-import { resolveNodeBin } from "./command-env";
 import { type App } from "electron";
 import { type ServiceDefinition } from "../../../support/manifest/manifest-utils";
 import { getPreparedEmbeddedNodeStartEnv } from "./embedded-node-runtime";
@@ -10,26 +7,9 @@ import { type ServicesIntegrationPorts } from "../integration-ports";
 import fs from "node:fs";
 import { readEnvFile } from "../../../infrastructure/filesystem/env-file";
 
-export const NODE_BIN_START_ENV_SERVICE_IDS = new Set<ServiceId>([
-  LOCAL_CLI_ACP_RELAY_PLUGIN_ID
-]);
-
-export function resolveNodeBinStartEnv() {
-  const nodeBin = resolveNodeBin();
-  const env: Record<string, string> = { NODE_BIN: nodeBin };
-  if (nodeBin === process.execPath) {
-    env.ELECTRON_RUN_AS_NODE = "1";
-  }
-  return env;
-}
-
 export function getStartCommandEnvOverrides(app: App, service: ServiceDefinition) {
   if (service.id === "agent-platform") return getPreparedEmbeddedNodeStartEnv(app);
-  if (!NODE_BIN_START_ENV_SERVICE_IDS.has(service.id)) {
-    return undefined;
-  }
-
-  return resolveNodeBinStartEnv();
+  return undefined;
 }
 
 export function getDesktopStartCommandOptions(app: App, service: ServiceDefinition): RunServiceCommandOptions {

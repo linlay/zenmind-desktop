@@ -30,7 +30,6 @@ import { appendConfiguredServiceLifecycleArgs } from "../lifecycle-args";
 import { resolveAgentWebclientHostStartOverrides } from "./host-policy";
 import { buildDesktopManagedDeployCommand, resolveAgentPlatformDeployPublicKeySourceFile } from "./installation";
 import { getPreparedStartupStartOptions } from "./startup-options";
-import { resolveAcpCommandForDesktop } from "./env-normalization";
 import { parseProcessTreeRowsFromPs, parseProcessTreeRowsFromWindowsPowerShell, buildProcessTreePids } from "./process-tree";
 import {
   collectManagedRootPids,
@@ -100,7 +99,6 @@ export const __testInternals = {
   resolveAgentPlatformDeployPublicKeySourceFile,
   getDesktopStartCommandOptions,
   getPreparedStartupStartOptions,
-  resolveAcpCommandForDesktop,
   parseProcessTreeRowsFromPs,
   parseProcessTreeRowsFromPowerShell: parseProcessTreeRowsFromWindowsPowerShell,
   buildProcessTreePids,

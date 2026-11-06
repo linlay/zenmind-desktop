@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
+import {once} from 'node:events';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const {prepareEmbeddedNodeRuntime,embeddedNodeLaunchers,embeddedNodeExecutable}=require('../dist-electron/main/modules/services/manager/embedded-node-runtime.js');
@@ -44,6 +45,32 @@ test('stable bin is reused and updated while retired runtime files remain availa
  assert.equal(retired.length,1);
  assert.equal(JSON.parse(fs.readFileSync(path.join(options.stateRoot,retired[0],'bin/node_modules/npm/package.json'))).version,'10.9.4');
  assert.ok(fs.existsSync(path.join(first.binDir,'node_modules/npm/bin/npm-cli.js')));
+});
+
+test('macOS runtime publication after consumers exit starts the declared embedded Node version', {skip:process.platform!=='darwin'}, async t=>{
+ const {options}=fixture(t);
+ const helper=path.resolve(require('electron'),'../../Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper');
+ const probe=spawnSync(helper,['-p','process.versions.node'],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8'});
+ assert.equal(probe.status,0,probe.stderr);
+ const nextVersion=probe.stdout.trim();
+ const first=await prepareEmbeddedNodeRuntime(options);
+ const consumers=[];
+ try {
+  for(let i=0;i<2;i++) {
+   const child=spawn(first.node,['-e',"console.log(process.versions.node);process.stdin.resume();process.stdin.on('end',()=>process.exit(0))"],{stdio:['pipe','pipe','pipe']});
+   const exited=once(child,'exit');consumers.push({child,exited});
+   assert.equal(String((await once(child.stdout,'data'))[0]).trim(),options.nodeVersion);
+  }
+  consumers[0].child.stdin.end();await consumers[0].exited;
+  assert.equal(consumers[1].child.exitCode,null,'the other consumer still runs');
+  consumers[1].child.stdin.end();await consumers[1].exited;
+  const next=await prepareEmbeddedNodeRuntime({...options,executable:helper,nodeVersion:nextVersion});
+  assert.equal(spawnSync(next.node,['-p','process.versions.node'],{encoding:'utf8'}).stdout.trim(),nextVersion);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(next.binDir,'runtime.json'))).nodeVersion,nextVersion);
+  t.diagnostic(`real runtime publication ${options.nodeVersion} -> ${nextVersion}; both prior consumers exited`);
+ } finally {
+  for(const {child,exited} of consumers) {if(child.exitCode===null)child.kill('SIGKILL');await exited;}
+ }
 });
 
 test('Windows uses a native node.exe and standard npm layout without setting a global Electron mode',async t=>{
